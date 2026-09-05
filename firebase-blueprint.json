@@ -1,0 +1,211 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Passenger profile registered on Toto Drive",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique user ID" },
+        "name": { "type": "string", "maxLength": 100, "description": "Full name of passenger" },
+        "phone": { "type": "string", "maxLength": 20, "description": "Contact mobile number" },
+        "email": { "type": "string", "maxLength": 120, "description": "Email address" },
+        "rating": { "type": "number", "description": "Passenger average rating" },
+        "totalRides": { "type": "number", "description": "Total rides completed" },
+        "walletBalance": { "type": "number", "description": "Passenger wallet balance in INR" },
+        "avatarUrl": { "type": "string", "maxLength": 500, "description": "Profile picture URL" },
+        "createdAt": { "type": "string", "description": "Account registration timestamp" }
+      },
+      "required": ["id", "name", "phone", "email"]
+    },
+    "DriverProfile": {
+      "title": "DriverProfile",
+      "description": "Toto Partner driver registered on Toto Drive",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique driver ID" },
+        "name": { "type": "string", "maxLength": 100, "description": "Driver full name" },
+        "phone": { "type": "string", "maxLength": 20, "description": "Contact mobile number" },
+        "vehicleType": { "type": "string", "enum": ["toto", "bike", "auto"], "description": "Type of vehicle" },
+        "vehicleNumber": { "type": "string", "maxLength": 30, "description": "Government registration plate number" },
+        "vehicleModel": { "type": "string", "maxLength": 100, "description": "Commercial Toto model name" },
+        "vehicleColor": { "type": "string", "maxLength": 50, "description": "Color of the Toto vehicle" },
+        "pin": { "type": "string", "maxLength": 10, "description": "4-digit security PIN for driver dashboard login" },
+        "approvalStatus": { "type": "string", "enum": ["pending", "approved", "rejected"], "description": "Admin verification status" },
+        "registeredAt": { "type": "string", "description": "Driver onboarding timestamp" },
+        "approvedAt": { "type": "string", "description": "Admin approval timestamp" },
+        "rating": { "type": "number", "description": "Driver average rating" },
+        "totalTrips": { "type": "number", "description": "Total trips completed" },
+        "batteryPercentage": { "type": "number", "description": "Electric vehicle battery state" },
+        "todayEarnings": { "type": "number", "description": "Total earnings accumulated today in INR" },
+        "acceptanceRate": { "type": "number", "description": "Percentage of ride requests accepted" },
+        "isOnline": { "type": "boolean", "description": "Driver active duty availability state" },
+        "avatarUrl": { "type": "string", "maxLength": 500, "description": "Driver profile picture URL" },
+        "kycVerified": { "type": "boolean", "description": "Whether the driver KYC and documents are verified" },
+        "currentLat": { "type": "number", "description": "Current GPS latitude" },
+        "currentLng": { "type": "number", "description": "Current GPS longitude" },
+        "updatedAt": { "type": "string", "description": "Last status or location update timestamp" }
+      },
+      "required": ["id", "name", "phone", "vehicleType", "vehicleNumber", "isOnline"]
+    },
+    "Ride": {
+      "title": "Ride",
+      "description": "Real-time ride booking and trip lifecycle record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique ride booking ID" },
+        "userId": { "type": "string", "description": "Passenger user ID" },
+        "userName": { "type": "string", "maxLength": 100, "description": "Passenger name" },
+        "userPhone": { "type": "string", "maxLength": 20, "description": "Passenger phone number" },
+        "userRating": { "type": "number", "description": "Passenger rating" },
+        "driverId": { "type": "string", "maxLength": 128, "description": "Assigned Toto driver ID" },
+        "driverName": { "type": "string", "maxLength": 100, "description": "Driver name" },
+        "driverPhone": { "type": "string", "maxLength": 20, "description": "Driver contact number" },
+        "driverPhoto": { "type": "string", "maxLength": 500, "description": "Driver photo URL" },
+        "vehicleNumber": { "type": "string", "maxLength": 30, "description": "Toto vehicle plate" },
+        "vehicleModel": { "type": "string", "maxLength": 100, "description": "Toto vehicle model" },
+        "vehicleType": { "type": "string", "enum": ["toto", "bike", "toto_express", "auto"], "description": "Vehicle category" },
+        "pickup": { "type": "object", "description": "Origin location with lat, lng, name, address" },
+        "dropoff": { "type": "object", "description": "Destination location with lat, lng, name, address" },
+        "distanceKm": { "type": "number", "description": "Calculated route distance in km" },
+        "estimatedMins": { "type": "number", "description": "Trip duration estimate in minutes" },
+        "basePrice": { "type": "number", "description": "Standard fare in INR before discount" },
+        "discount": { "type": "number", "description": "Discount applied in INR" },
+        "totalFare": { "type": "number", "description": "Final customer fare in INR" },
+        "driverEarnings": { "type": "number", "description": "Driver net payout in INR" },
+        "paymentMethod": { "type": "string", "enum": ["cash", "upi", "wallet"], "description": "Selected payment method" },
+        "paymentStatus": { "type": "string", "enum": ["pending", "paid"], "description": "Payment settlement status" },
+        "status": {
+          "type": "string",
+          "enum": ["idle", "searching", "driver_assigned", "driver_arriving", "driver_arrived", "in_progress", "completed", "cancelled"],
+          "description": "Current lifecycle status of the ride"
+        },
+        "otp": { "type": "string", "maxLength": 6, "description": "4-digit trip start verification PIN" },
+        "bookedAt": { "type": "string", "description": "Time the ride was requested" },
+        "acceptedAt": { "type": "string", "description": "Time the driver accepted" },
+        "completedAt": { "type": "string", "description": "Time the ride ended" },
+        "selectedOfferTag": { "type": "string", "maxLength": 60, "description": "Special tag chosen by passenger" },
+        "driverLocation": {
+          "type": "object",
+          "description": "Live GPS location of the assigned driver",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "heading": { "type": "number" },
+            "timestamp": { "type": "number" }
+          }
+        },
+        "routeCoordinates": {
+          "type": "array",
+          "description": "Road route coordinates as array of lat/lng objects",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lat": { "type": "number" },
+              "lng": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["id", "userId", "pickup", "dropoff", "totalFare", "status", "otp"]
+    },
+    "EarningsRecord": {
+      "title": "EarningsRecord",
+      "description": "Completed trip earning ledger for Toto Partner",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Transaction identifier" },
+        "driverId": { "type": "string", "description": "Driver ID who earned the fare" },
+        "rideId": { "type": "string", "description": "Associated completed ride ID" },
+        "amount": { "type": "number", "description": "Earned amount in INR" },
+        "pickup": { "type": "string", "maxLength": 200, "description": "Pickup spot name" },
+        "drop": { "type": "string", "maxLength": 200, "description": "Destination spot name" },
+        "time": { "type": "string", "description": "Transaction timestamp" }
+      },
+      "required": ["id", "driverId", "amount", "pickup", "drop"]
+    },
+    "DriverApprovalRequest": {
+      "title": "DriverApprovalRequest",
+      "description": "Pending driver partner registrations for admin approval and 4-digit PIN assignment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique registration approval ID" },
+        "driverName": { "type": "string", "maxLength": 100, "description": "Driver full name" },
+        "phone": { "type": "string", "maxLength": 20, "description": "Driver mobile phone number" },
+        "vehicleType": { "type": "string", "enum": ["toto", "bike", "auto"], "description": "Vehicle type" },
+        "vehicleNumber": { "type": "string", "maxLength": 30, "description": "Toto number plate" },
+        "vehicleModel": { "type": "string", "maxLength": 100, "description": "Toto brand/model name" },
+        "vehicleColor": { "type": "string", "maxLength": 50, "description": "Toto body color" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"], "description": "Approval review state" },
+        "generatedPin": { "type": "string", "maxLength": 10, "description": "Generated 4-digit security PIN upon approval" },
+        "createdAt": { "type": "string", "description": "Submission timestamp" },
+        "approvedAt": { "type": "string", "description": "Admin approval timestamp" }
+      },
+      "required": ["id", "driverName", "phone", "vehicleNumber", "status"]
+    },
+    "TripRecord": {
+      "title": "TripRecord",
+      "description": "Completed trip record used to compute dynamic driver earnings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique trip ID" },
+        "driverId": { "type": "string", "description": "Driver ID who completed the trip" },
+        "fare": { "type": "number", "description": "Total trip earnings in INR" },
+        "status": { "type": "string", "enum": ["completed", "cancelled"], "description": "Trip completion status" },
+        "pickupName": { "type": "string", "maxLength": 200, "description": "Origin spot" },
+        "dropoffName": { "type": "string", "maxLength": 200, "description": "Destination spot" },
+        "distanceKm": { "type": "number", "description": "Distance traveled in km" },
+        "completedAt": { "type": "string", "description": "Trip completion timestamp" },
+        "paymentMethod": { "type": "string", "enum": ["cash", "upi", "wallet"], "description": "Payment mode" }
+      },
+      "required": ["id", "driverId", "fare", "status"]
+    },
+    "RideRequest": {
+      "title": "RideRequest",
+      "description": "Incoming real-time ride request for driver notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique ride request ID" },
+        "rideId": { "type": "string", "description": "Parent ride booking ID" },
+        "driverId": { "type": "string", "description": "Target driver ID or 'all'" },
+        "passengerName": { "type": "string", "maxLength": 100, "description": "Passenger name" },
+        "pickupName": { "type": "string", "maxLength": 200, "description": "Pickup spot name" },
+        "dropoffName": { "type": "string", "maxLength": 200, "description": "Drop spot name" },
+        "fare": { "type": "number", "description": "Ride fare in INR" },
+        "distanceKm": { "type": "number", "description": "Trip distance" },
+        "status": { "type": "string", "enum": ["searching", "accepted", "rejected", "expired"], "description": "Request dispatch status" },
+        "createdAt": { "type": "string", "description": "Request dispatch timestamp" }
+      },
+      "required": ["id", "driverId", "pickupName", "dropoffName", "fare", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Passenger personal profiles and ride history metadata"
+    },
+    "/drivers/{driverId}": {
+      "schema": { "$ref": "#/entities/DriverProfile" },
+      "description": "Toto Partner driver accounts, online status, and vehicle specs"
+    },
+    "/rides/{rideId}": {
+      "schema": { "$ref": "#/entities/Ride" },
+      "description": "Active and past ride trips with real-time status sync"
+    },
+    "/earnings/{earningId}": {
+      "schema": { "$ref": "#/entities/EarningsRecord" },
+      "description": "Driver earnings ledger items"
+    },
+    "/driver_approvals/{approvalId}": {
+      "schema": { "$ref": "#/entities/DriverApprovalRequest" },
+      "description": "Driver registration queue awaiting admin verification and PIN issuance"
+    },
+    "/trips/{tripId}": {
+      "schema": { "$ref": "#/entities/TripRecord" },
+      "description": "Completed trips for real-time driver earnings calculations"
+    },
+    "/rideRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/RideRequest" },
+      "description": "Real-time ride requests triggering top banner notifications on driver dashboards"
+    }
+  }
+}
