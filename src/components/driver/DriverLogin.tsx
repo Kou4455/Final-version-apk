@@ -37,21 +37,6 @@ const POPULAR_COLORS = [
   'Pearl White'
 ];
 
-const DRIVER_PHOTO_PRESETS = [
-  { id: 'dp1', label: 'Capt. Sujit', url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=160&auto=format&fit=crop&q=80' },
-  { id: 'dp2', label: 'Capt. Ratan', url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=160&auto=format&fit=crop&q=80' },
-  { id: 'dp3', label: 'Capt. Bappa', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=160&auto=format&fit=crop&q=80' },
-  { id: 'dp4', label: 'Capt. Joydeb', url: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=160&auto=format&fit=crop&q=80' }
-];
-
-const TOTO_PHOTO_PRESETS = [
-  { id: 'tp_green', name: 'Emerald Green Toto', color: 'Emerald Green', url: 'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=320&auto=format&fit=crop&q=80' },
-  { id: 'tp_yellow', name: 'Canary Yellow Toto', color: 'Canary Yellow', url: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=320&auto=format&fit=crop&q=80' },
-  { id: 'tp_blue', name: 'Electric Blue Toto', color: 'Electric Blue', url: 'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?w=320&auto=format&fit=crop&q=80' },
-  { id: 'tp_orange', name: 'Saffron Orange Toto', color: 'Saffron Orange', url: 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=320&auto=format&fit=crop&q=80' },
-  { id: 'tp_white', name: 'Pearl White Toto', color: 'Pearl White', url: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=320&auto=format&fit=crop&q=80' }
-];
-
 export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack }) => {
   const { 
     loginDriver,
@@ -77,8 +62,8 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
   const [regVehicleNumber, setRegVehicleNumber] = useState('');
   const [regVehicleModel, setRegVehicleModel] = useState('Mayuri Deluxe Li-ion E-Rickshaw');
   const [regVehicleColor, setRegVehicleColor] = useState('Emerald Green');
-  const [driverPhoto, setDriverPhoto] = useState<string>(DRIVER_PHOTO_PRESETS[0].url);
-  const [totoPhotos, setTotoPhotos] = useState<string[]>([TOTO_PHOTO_PRESETS[0].url]);
+  const [driverPhoto, setDriverPhoto] = useState<string>('');
+  const [totoPhotos, setTotoPhotos] = useState<string[]>([]);
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -114,14 +99,6 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
         }
       };
       reader.readAsDataURL(file);
-    }
-  };
-
-  // Add preset Toto photo
-  const addTotoPresetPhoto = (url: string) => {
-    if (!totoPhotos.includes(url)) {
-      setTotoPhotos((prev) => [...prev, url]);
-      triggerSound('beep');
     }
   };
 
@@ -299,86 +276,8 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
           </div>
         )}
 
-        {/* Registration Success Confirmation */}
-        {registrationSubmitted ? (
-          <div className="bg-emerald-50 border border-emerald-300 rounded-3xl p-5 text-center space-y-4 shadow-2xs">
-            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
-              <CheckCircle className="w-6 h-6" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-sm font-extrabold text-emerald-900">
-                Registration & Photos Stored in Firestore!
-              </h3>
-              <p className="text-xs text-emerald-800">
-                Your Toto registration dossier with driver selfie and vehicle photos has been submitted to Admin. Once approved, a unique 4-digit security PIN will be issued for you.
-              </p>
-            </div>
-
-            {/* Preview of Submitted Photos */}
-            <div className="bg-white/80 p-3 rounded-2xl border border-emerald-200 text-left space-y-2.5">
-              <div className="flex items-center gap-3">
-                {driverPhoto ? (
-                  <img 
-                    src={driverPhoto} 
-                    alt="Driver Photo" 
-                    className="w-12 h-12 rounded-xl object-cover border-2 border-emerald-400 shadow-2xs"
-                  />
-                ) : (
-                  <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center font-bold text-emerald-800">
-                    {regName.slice(0, 1) || 'C'}
-                  </div>
-                )}
-                <div>
-                  <div className="font-extrabold text-xs text-neutral-900">{regName}</div>
-                  <div className="text-[11px] text-neutral-500 font-mono">{regVehicleNumber}</div>
-                  <div className="text-[10px] text-emerald-700 font-semibold">{regVehicleModel} ({regVehicleColor})</div>
-                </div>
-              </div>
-
-              {totoPhotos.length > 0 && (
-                <div className="pt-1.5 border-t border-emerald-100 space-y-1">
-                  <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">
-                    {totoPhotos.length} Toto Photo{totoPhotos.length > 1 ? 's' : ''} Attached:
-                  </div>
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {totoPhotos.map((url, i) => (
-                      <img
-                        key={i}
-                        src={url}
-                        alt={`Toto ${i + 1}`}
-                        className="w-16 h-12 rounded-lg object-cover border border-emerald-200 shrink-0"
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="pt-1 space-y-2">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerSound('beep');
-                  setActiveRole('admin');
-                }}
-                className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-2xl transition-all cursor-pointer shadow-xs"
-              >
-                Open Admin Console & Approve Driver Now
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRegisterMode(false);
-                  setRegistrationSubmitted(false);
-                }}
-                className="w-full py-2 text-xs font-semibold text-neutral-600 hover:text-black cursor-pointer"
-              >
-                Back to Sign In
-              </button>
-            </div>
-          </div>
-        ) : !isRegisterMode ? (
+        {/* Form View Router */}
+        {!isRegisterMode ? (
           /* Login with Phone + 4-digit PIN */
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             {/* Phone Number */}
@@ -441,9 +340,12 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
             )}
 
             {loginSuccess && (
-              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold text-emerald-800 animate-in fade-in">
-                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>PIN Verified! Redirecting to Dashboard...</span>
+              <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl flex flex-col items-center justify-center gap-2 text-center animate-in fade-in">
+                <CheckCircle className="w-6 h-6 text-emerald-600 shrink-0" />
+                <h3 className="text-sm font-bold text-emerald-900">Your KYC is approved!</h3>
+                <p className="text-xs font-semibold text-emerald-800">
+                  Your verification is confirmed and your account is ready to go. Redirecting...
+                </p>
               </div>
             )}
 
@@ -469,67 +371,6 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
               )}
             </button>
 
-            {/* Quick Demo Captains One-Click Sign In */}
-            <div className="pt-2 border-t border-[#EDE8E0] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-neutral-600">Quick Demo Captains (1-Click Login):</span>
-                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200">Instant Access</span>
-              </div>
-              <div className="grid grid-cols-1 gap-1.5">
-                {SEED_DRIVERS.map((d) => (
-                  <button
-                    key={d.id}
-                    type="button"
-                    onClick={async () => {
-                      setPhoneNumber(d.phone);
-                      setSecurityPin('1234');
-                      setErrorMsg('');
-                      setPendingApprovalNotice(null);
-                      setLoginSuccess(true);
-                      triggerSound('success');
-                      await loginDriver(d);
-                      setTimeout(() => {
-                        if (onLoginSuccess) onLoginSuccess();
-                      }, 350);
-                    }}
-                    className="flex items-center justify-between p-2.5 bg-white hover:bg-amber-50/80 active:scale-[0.98] rounded-2xl border border-[#EDE8E0] hover:border-amber-300 transition-all cursor-pointer text-left group shadow-2xs"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      {/* Driver Photo & Toto Photo Badge */}
-                      <div className="relative shrink-0">
-                        <img
-                          src={d.avatarUrl || d.driverPhoto}
-                          alt={d.name}
-                          className="w-10 h-10 rounded-xl object-cover border border-neutral-200 group-hover:border-[#C8622A] transition-colors"
-                        />
-                        {d.totoPhoto && (
-                          <img
-                            src={d.totoPhoto}
-                            alt={d.vehicleModel}
-                            className="w-4 h-4 rounded-full object-cover absolute -bottom-1 -right-1 border border-white shadow-xs"
-                            title={d.vehicleModel}
-                          />
-                        )}
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-neutral-900 group-hover:text-[#C8622A] flex items-center gap-1.5">
-                          <span>{d.name}</span>
-                          <span className="text-[9px] font-medium text-neutral-400 bg-neutral-100 px-1 rounded">
-                            {d.vehicleColor}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-neutral-500 font-mono">
-                          {d.vehicleNumber} • PIN: 1234
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-bold text-[#C8622A] bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200 group-hover:bg-[#C8622A] group-hover:text-white transition-colors">
-                      Sign In →
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
           </form>
         ) : (
           /* Registration Form */
@@ -568,7 +409,63 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
               </div>
             </div>
 
-            {/* 3. OPTION: Driver Photo (Selfie / ID Portrait) */}
+            {/* 3. Vehicle Registration Plate */}
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold text-[#111111]">
+                Toto Registration Number Plate
+              </label>
+              <div className="relative flex items-center bg-white rounded-2xl border border-[#EDE8E0] px-3.5 py-2.5 shadow-2xs">
+                <Car className="w-3.5 h-3.5 text-gray-400 mr-2 shrink-0" />
+                <input
+                  type="text"
+                  value={regVehicleNumber}
+                  onChange={(e) => setRegVehicleNumber(e.target.value)}
+                  placeholder="e.g. WB-06-ER-8942"
+                  className="w-full text-xs font-mono font-bold uppercase text-[#111111] placeholder-gray-400 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* 4. Toto Model */}
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold text-[#111111]">
+                Toto Model
+              </label>
+              <input
+                type="text"
+                value={regVehicleModel}
+                onChange={(e) => setRegVehicleModel(e.target.value)}
+                placeholder="e.g. Mayuri Deluxe Lithium"
+                className="w-full bg-white rounded-2xl border border-[#EDE8E0] px-3.5 py-2.5 text-xs font-semibold text-[#111111] placeholder-gray-400 focus:outline-none shadow-2xs"
+              />
+            </div>
+
+            {/* 5. Body Color */}
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold text-[#111111]">
+                Toto Body Color
+              </label>
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {POPULAR_COLORS.map((col) => (
+                  <button
+                    key={col}
+                    type="button"
+                    onClick={() => {
+                      setRegVehicleColor(col);
+                    }}
+                    className={`text-[10px] font-semibold px-2.5 py-1 rounded-xl border transition-all cursor-pointer ${
+                      regVehicleColor === col
+                        ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
+                        : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'
+                    }`}
+                  >
+                    {col}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 6. Driver Photo (Selfie / ID Portrait) */}
             <div className="space-y-2 bg-white p-3.5 rounded-2xl border border-[#EDE8E0] shadow-2xs">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
@@ -626,94 +523,6 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
                     Clear passport photo or selfie for passenger trust & safety.
                   </p>
                 </div>
-              </div>
-
-              {/* Quick Portrait Presets */}
-              <div className="pt-1.5 border-t border-neutral-100">
-                <span className="text-[10px] font-bold text-neutral-500 block mb-1">
-                  Or select verified driver portrait:
-                </span>
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                  {DRIVER_PHOTO_PRESETS.map((dp) => (
-                    <button
-                      key={dp.id}
-                      type="button"
-                      onClick={() => {
-                        setDriverPhoto(dp.url);
-                        triggerSound('beep');
-                      }}
-                      className={`flex items-center gap-1.5 p-1 pr-2 rounded-xl border transition-all cursor-pointer shrink-0 ${
-                        driverPhoto === dp.url 
-                          ? 'border-[#C8622A] bg-amber-50/80 shadow-2xs' 
-                          : 'border-neutral-200 bg-white hover:border-neutral-300'
-                      }`}
-                    >
-                      <img src={dp.url} alt={dp.label} className="w-6 h-6 rounded-lg object-cover" />
-                      <span className="text-[10px] font-semibold text-neutral-800">{dp.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* 4. Vehicle Registration Plate */}
-            <div className="space-y-1">
-              <label className="block text-[11px] font-bold text-[#111111]">
-                Toto Registration Number Plate
-              </label>
-              <div className="relative flex items-center bg-white rounded-2xl border border-[#EDE8E0] px-3.5 py-2.5 shadow-2xs">
-                <Car className="w-3.5 h-3.5 text-gray-400 mr-2 shrink-0" />
-                <input
-                  type="text"
-                  value={regVehicleNumber}
-                  onChange={(e) => setRegVehicleNumber(e.target.value)}
-                  placeholder="e.g. WB-06-ER-8942"
-                  className="w-full text-xs font-mono font-bold uppercase text-[#111111] placeholder-gray-400 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* 5. Toto Model */}
-            <div className="space-y-1">
-              <label className="block text-[11px] font-bold text-[#111111]">
-                Toto Model
-              </label>
-              <input
-                type="text"
-                value={regVehicleModel}
-                onChange={(e) => setRegVehicleModel(e.target.value)}
-                placeholder="e.g. Mayuri Deluxe Lithium"
-                className="w-full bg-white rounded-2xl border border-[#EDE8E0] px-3.5 py-2.5 text-xs font-semibold text-[#111111] placeholder-gray-400 focus:outline-none shadow-2xs"
-              />
-            </div>
-
-            {/* 6. Body Color */}
-            <div className="space-y-1">
-              <label className="block text-[11px] font-bold text-[#111111]">
-                Toto Body Color
-              </label>
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {POPULAR_COLORS.map((col) => (
-                  <button
-                    key={col}
-                    type="button"
-                    onClick={() => {
-                      setRegVehicleColor(col);
-                      // Auto-suggest matching toto photo
-                      const matchingPreset = TOTO_PHOTO_PRESETS.find(p => p.color === col);
-                      if (matchingPreset && !totoPhotos.includes(matchingPreset.url)) {
-                        setTotoPhotos([matchingPreset.url]);
-                      }
-                    }}
-                    className={`text-[10px] font-semibold px-2.5 py-1 rounded-xl border transition-all cursor-pointer ${
-                      regVehicleColor === col
-                        ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
-                        : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'
-                    }`}
-                  >
-                    {col}
-                  </button>
-                ))}
               </div>
             </div>
 
@@ -782,70 +591,48 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
                   />
                 </label>
               )}
-
-              {/* Quick Toto Vehicle Presets Matching Colors */}
-              <div className="pt-1.5 border-t border-neutral-100">
-                <span className="text-[10px] font-bold text-neutral-500 block mb-1">
-                  Attach Authentic Toto E-Rickshaw Photo Presets:
-                </span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {TOTO_PHOTO_PRESETS.map((preset) => {
-                    const isAdded = totoPhotos.includes(preset.url);
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => {
-                          if (isAdded) {
-                            setTotoPhotos(prev => prev.filter(u => u !== preset.url));
-                          } else {
-                            addTotoPresetPhoto(preset.url);
-                          }
-                        }}
-                        className={`flex items-center gap-1.5 p-1.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          isAdded 
-                            ? 'border-emerald-500 bg-emerald-50/60 shadow-2xs' 
-                            : 'border-neutral-200 bg-white hover:border-neutral-300'
-                        }`}
-                      >
-                        <img 
-                          src={preset.url} 
-                          alt={preset.name} 
-                          className="w-7 h-7 rounded-lg object-cover shrink-0" 
-                        />
-                        <div className="truncate flex-1">
-                          <div className="text-[10px] font-bold text-neutral-900 truncate">
-                            {preset.name}
-                          </div>
-                          <div className="text-[9px] text-neutral-500 font-medium">
-                            {isAdded ? '✓ Added' : '+ Tap to add'}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
             </div>
 
+            {/* Registration Success Confirmation */}
+            {registrationSubmitted && (
+              <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 text-center space-y-2 shadow-2xs mb-4">
+                <CheckCircle className="w-6 h-6 text-emerald-600 mx-auto" />
+                <h3 className="text-sm font-extrabold text-emerald-900">
+                  Success!
+                </h3>
+                <p className="text-xs text-emerald-800 font-medium">
+                  Your submission was received successfully. We are reviewing your details and will get back to you shortly.
+                </p>
+              </div>
+            )}
+
             {errorMsg && (
-              <p className="text-xs text-red-600 font-semibold bg-red-50 p-2.5 rounded-xl border border-red-200">
+              <p className="text-xs text-red-600 font-semibold bg-red-50 p-2.5 rounded-xl border border-red-200 mb-4">
                 {errorMsg}
               </p>
             )}
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full bg-[#FF6B2C] hover:bg-[#E55A1F] active:scale-[0.99] text-white font-bold py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 text-xs shadow-xs transition-all cursor-pointer disabled:opacity-75 pt-2"
+              disabled={loading || registrationSubmitted}
+              className={`w-full font-bold py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 text-xs shadow-xs transition-all cursor-pointer pt-2 ${
+                registrationSubmitted
+                  ? 'bg-emerald-600 hover:bg-emerald-600 text-white cursor-default'
+                  : 'bg-[#FF6B2C] hover:bg-[#E55A1F] active:scale-[0.99] text-white disabled:opacity-75'
+              }`}
             >
               {loading ? (
                 <>
                   <RotateCw className="w-3.5 h-3.5 animate-spin" />
                   <span>Submitting to Firestore...</span>
                 </>
+              ) : registrationSubmitted ? (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Submitted</span>
+                </>
               ) : (
-                <span>Submit Toto & Photos for Admin Approval</span>
+                <span>Submit For Approval</span>
               )}
             </button>
           </form>

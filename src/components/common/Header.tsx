@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useRide } from '../../context/RideContext';
 import { SEED_DRIVERS } from '../../data/appData';
 import { AppLogo } from './AppLogo';
@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
+  const [showPassengerLogoutConfirm, setShowPassengerLogoutConfirm] = useState(false);
+
   const { 
     activeRole, 
     setActiveRole, 
@@ -104,12 +106,42 @@ export const Header: React.FC = () => {
 
               <button
                 id="header-passenger-signout-btn"
-                onClick={() => { logoutUser(); triggerSound('beep'); }}
+                onClick={() => { setShowPassengerLogoutConfirm(true); triggerSound('beep'); }}
                 title="Sign out passenger"
                 className="p-2 rounded-xl hover:bg-neutral-100 text-neutral-400 hover:text-red-600 transition-colors cursor-pointer border border-transparent hover:border-neutral-200"
               >
                 <LogOut className="w-4 h-4" />
               </button>
+
+              {showPassengerLogoutConfirm && (
+                <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                    <div className="flex flex-col items-center text-center space-y-4">
+                      <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center">
+                        <LogOut className="w-7 h-7 text-red-600 ml-1" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="text-xl sm:text-lg font-black text-neutral-900 tracking-tight">Log Out of TotoDrive?</h3>
+                        <p className="text-sm font-medium text-neutral-500 px-2 sm:px-0">You will need to verify your phone number to log back in.</p>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-3 w-full pt-2">
+                        <button
+                          onClick={() => { setShowPassengerLogoutConfirm(false); triggerSound('beep'); }}
+                          className="w-full sm:flex-1 py-3.5 sm:py-3 px-4 rounded-2xl bg-neutral-100 hover:bg-neutral-200 active:scale-95 text-neutral-700 font-bold text-sm transition-all cursor-pointer order-2 sm:order-1"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => { setShowPassengerLogoutConfirm(false); logoutUser(); triggerSound('beep'); }}
+                          className="w-full sm:flex-1 py-3.5 sm:py-3 px-4 rounded-2xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-sm transition-all cursor-pointer shadow-sm shadow-red-200 order-1 sm:order-2"
+                        >
+                          Yes, Log Out
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

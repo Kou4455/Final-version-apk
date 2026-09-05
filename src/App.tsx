@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { RideProvider, useRide } from './context/RideContext';
 import { Header } from './components/common/Header';
+import { BottomNavigation } from './components/common/BottomNavigation';
 import { FirestoreQuotaBanner } from './components/common/FirestoreQuotaBanner';
 import { SplashScreen } from './components/common/SplashScreen';
 import { UserLogin } from './components/user/UserLogin';
@@ -114,6 +115,7 @@ const MainAppContent: React.FC = () => {
           </div>
         </div>
       </footer>
+      <BottomNavigation />
     </div>
   );
 };

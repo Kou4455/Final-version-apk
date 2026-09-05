@@ -197,32 +197,10 @@ export const UserLogin: React.FC<UserLoginProps> = ({ onLoginSuccess, onBack }) 
       className="w-full flex-1 sm:flex-initial sm:max-w-md md:max-w-lg mx-auto bg-white sm:rounded-3xl border-0 sm:border border-[#EDE8E0] shadow-none sm:shadow-sm p-5 sm:p-8 text-[#111111] font-sans select-none animate-in fade-in duration-200 flex flex-col justify-between min-h-[calc(100vh-65px)] sm:min-h-0 overflow-y-auto overscroll-contain"
     >
       <div className="space-y-5">
-        {/* Top Header & App Icon */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <AppLogo size="sm" />
-            <span className="font-extrabold text-sm tracking-tight text-neutral-900">
-              Toto<span className="text-[#E07A00]">Drive</span>
-            </span>
-          </div>
-
-          {(otpStep || onBack) && (
-            <button
-              type="button"
-              onClick={otpStep ? () => setOtpStep(false) : onBack}
-              className="p-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 active:scale-95 text-neutral-800 transition-all cursor-pointer"
-              title="Back"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        {/* Top Header & App Icon removed */}
 
         {/* Title Typography */}
         <div className="space-y-1">
-          <div className="text-[10px] font-bold tracking-wider uppercase text-[#E07A00] bg-[#FFF3C4] px-2 py-0.5 rounded-md inline-block">
-            Customer Portal
-          </div>
           <h1 className="text-2xl font-black text-neutral-900 tracking-tight">
             {otpStep ? 'Verify Mobile Number' : "Let's get you moving."}
           </h1>

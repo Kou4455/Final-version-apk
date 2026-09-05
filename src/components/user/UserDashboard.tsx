@@ -176,6 +176,12 @@ export const UserDashboard: React.FC = () => {
     fallbackPoint: POPULAR_LOCATIONS[0]
   });
 
+  useEffect(() => {
+    const handleOpenProfile = () => setIsProfileSettingsOpen(true);
+    window.addEventListener('openProfileSettings', handleOpenProfile);
+    return () => window.removeEventListener('openProfileSettings', handleOpenProfile);
+  }, []);
+
   // When location picker opens, autofocus input and reset query if desired
   useEffect(() => {
     if (showLocationPicker) {
@@ -411,35 +417,6 @@ export const UserDashboard: React.FC = () => {
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#111111] tracking-tight">
             Where to next?
           </h1>
-        </div>
-
-        {/* Profile Section with Settings trigger */}
-        <div 
-          className="flex items-center gap-2 pl-1.5 pr-2 py-1 rounded-full bg-white hover:bg-[#FAF8F5] border border-[#EAE4DB] hover:border-[#D5CDC2] shadow-2xs transition-all group cursor-pointer active:scale-95 select-none"
-          title="Profile & Settings"
-          role="button"
-          tabIndex={0}
-          onClick={() => {
-            setIsProfileSettingsOpen(true);
-            triggerSound('beep');
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              setIsProfileSettingsOpen(true);
-              triggerSound('beep');
-            }
-          }}
-        >
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#181818] to-neutral-800 text-white flex items-center justify-center font-extrabold text-xs shadow-xs border border-neutral-700 ring-2 ring-[#FF7A1A]/30 group-hover:ring-[#FF7A1A]/60 transition-all shrink-0">
-            {user?.name ? user.name.charAt(0).toUpperCase() : 'R'}
-          </div>
-          <div className="hidden sm:flex flex-col items-start pr-1 text-left">
-            <span className="text-xs font-bold text-[#111111] max-w-[85px] truncate leading-tight">
-              {user?.name ? user.name.split(' ')[0] : 'Account'}
-            </span>
-            <span className="text-[10px] text-gray-500 font-medium leading-none">Settings</span>
-          </div>
-          <Settings className="w-3.5 h-3.5 text-gray-400 group-hover:text-[#FF7A1A] group-hover:rotate-45 transition-all shrink-0 ml-0.5" />
         </div>
       </div>
 
