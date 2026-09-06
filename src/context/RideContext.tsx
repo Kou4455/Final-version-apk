@@ -104,6 +104,7 @@ interface RideContextType {
   ) => Promise<ActiveRide>;
   cancelRide: (reason?: string) => Promise<void>;
   rateRide: (rating: number, feedback: string) => Promise<void>;
+  advanceRideStage: () => Promise<void>;
   
   // Driver Actions
   driverAcceptRide: (rideId: string) => Promise<void>;
@@ -635,6 +636,144 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => unsubscribe();
   }, [driver, triggerSound]);
+
+  // 6. Realistic Driver Movement & Telemetry Simulation for Passenger Live Tracking in User Mode
+  useEffect(() => {
+    if (activeRole !== 'user' || !activeRide || activeRide.status === 'completed' || activeRide.status === 'cancelled') {
+      return;
+    }
+
+    // A. Auto-assign driver if in searching status for more than 3.5s
+    if (activeRide.status === 'searching') {
+      const timer = setTimeout(async () => {
+        const candidateDriver = (onlineDrivers.length > 0 ? onlineDrivers[0] : SEED_DRIVERS[0]);
+        const startLat = (activeRide.driverLocation?.lat || activeRide.pickup.lat) + 0.0028;
+        const startLng = (activeRide.driverLocation?.lng || activeRide.pickup.lng) + 0.0024;
+        const heading = calculateBearing(startLat, startLng, activeRide.pickup.lat, activeRide.pickup.lng);
+
+        const assignedUpdates: Partial<ActiveRide> = {
+          driverId: activeRide.driverId || candidateDriver.id,
+          driverName: activeRide.driverName || candidateDriver.name,
+          driverPhone: activeRide.driverPhone || candidateDriver.phone,
+          driverPhoto: activeRide.driverPhoto || candidateDriver.avatarUrl,
+          vehicleNumber: activeRide.vehicleNumber || candidateDriver.vehicleNumber,
+          vehicleModel: activeRide.vehicleModel || candidateDriver.vehicleModel,
+          status: 'driver_assigned',
+          acceptedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          driverLocation: {
+            lat: Number(startLat.toFixed(6)),
+            lng: Number(startLng.toFixed(6)),
+            heading: Math.round(heading),
+            timestamp: Date.now()
+          }
+        };
+
+        setActiveRide((prev) => prev ? { ...prev, ...assignedUpdates } : null);
+        triggerSound('success');
+
+        try {
+          await updateDoc(doc(db, 'rides', activeRide.id), sanitizeForFirestore(assignedUpdates));
+        } catch {
+          // Non-blocking
+        }
+      }, 3500);
+
+      return () => clearTimeout(timer);
+    }
+
+    // B. Smooth Live GPS Movement: towards Pickup (driver_assigned) or towards Dropoff (in_progress)
+    if (activeRide.status === 'driver_assigned' || activeRide.status === 'in_progress') {
+      const interval = setInterval(() => {
+        setActiveRide((prev) => {
+          if (!prev || (prev.status !== 'driver_assigned' && prev.status !== 'in_progress')) return prev;
+          const currentLoc = prev.driverLocation || {
+            lat: prev.pickup.lat + 0.002,
+            lng: prev.pickup.lng + 0.002,
+            heading: 0
+          };
+
+          const target = prev.status === 'in_progress' ? prev.dropoff : prev.pickup;
+          const dLat = target.lat - currentLoc.lat;
+          const dLng = target.lng - currentLoc.lng;
+          const distance = Math.sqrt(dLat * dLat + dLng * dLng);
+
+          // If arrived within ~25 meters
+          if (distance < 0.00035) {
+            if (prev.status === 'driver_assigned') {
+              triggerSound('beep');
+              const arrivedUpdates = {
+                status: 'driver_arrived' as const,
+                driverLocation: {
+                  lat: target.lat,
+                  lng: target.lng,
+                  heading: currentLoc.heading || 0,
+                  timestamp: Date.now()
+                }
+              };
+              updateDoc(doc(db, 'rides', prev.id), sanitizeForFirestore(arrivedUpdates)).catch(() => {});
+              return { ...prev, ...arrivedUpdates };
+            } else if (prev.status === 'in_progress') {
+              triggerSound('success');
+              const completedUpdates = {
+                status: 'completed' as const,
+                paymentStatus: 'paid' as const,
+                completedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                driverLocation: {
+                  lat: target.lat,
+                  lng: target.lng,
+                  heading: currentLoc.heading || 0,
+                  timestamp: Date.now()
+                }
+              };
+              updateDoc(doc(db, 'rides', prev.id), sanitizeForFirestore(completedUpdates)).catch(() => {});
+              return { ...prev, ...completedUpdates };
+            }
+          }
+
+          // Move 12% closer per step towards target
+          const step = 0.12;
+          const nextLat = currentLoc.lat + dLat * step;
+          const nextLng = currentLoc.lng + dLng * step;
+          const heading = calculateBearing(currentLoc.lat, currentLoc.lng, target.lat, target.lng);
+
+          const newLocation = {
+            lat: Number(nextLat.toFixed(6)),
+            lng: Number(nextLng.toFixed(6)),
+            heading: Math.round(heading),
+            timestamp: Date.now()
+          };
+
+          // Background Firestore sync
+          updateDoc(doc(db, 'rides', prev.id), { driverLocation: newLocation }).catch(() => {});
+
+          return {
+            ...prev,
+            driverLocation: newLocation
+          };
+        });
+      }, 2500);
+
+      return () => clearInterval(interval);
+    }
+    // C. When driver arrived at pickup, auto-board after 6s to start trip
+    if (activeRide.status === 'driver_arrived') {
+      const boardTimer = setTimeout(async () => {
+        const inProgressUpdates: Partial<ActiveRide> = {
+          status: 'in_progress',
+          startedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+        setActiveRide((prev) => prev ? { ...prev, ...inProgressUpdates } : null);
+        triggerSound('success');
+        try {
+          await updateDoc(doc(db, 'rides', activeRide.id), sanitizeForFirestore(inProgressUpdates));
+        } catch {
+          // non-blocking
+        }
+      }, 6000);
+
+      return () => clearTimeout(boardTimer);
+    }
+  }, [activeRole, activeRide?.id, activeRide?.status, triggerSound, onlineDrivers]);
 
   // Module-level guard to prevent concurrent popup requests that cause assertion failures
   const isGoogleAuthInProgressRef = { current: false };
@@ -1522,6 +1661,12 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       otp: generate4DigitOtp(),
       bookedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       routeCoordinates: routePoints,
+      driverLocation: {
+        lat: Number((pickup.lat + 0.0032).toFixed(6)),
+        lng: Number((pickup.lng + 0.0028).toFixed(6)),
+        heading: 45,
+        timestamp: Date.now()
+      },
     };
 
     setActiveRide(newRide);
@@ -1705,6 +1850,54 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {
         // Non-blocking
       }
+    }
+  };
+
+  // Advance Ride Stage manually for demo / instant testing
+  const advanceRideStage = async () => {
+    if (!activeRide) return;
+    if (activeRide.status === 'searching') {
+      const candidateDriver = (onlineDrivers.length > 0 ? onlineDrivers[0] : SEED_DRIVERS[0]);
+      const updates: Partial<ActiveRide> = {
+        driverId: activeRide.driverId || candidateDriver.id,
+        driverName: activeRide.driverName || candidateDriver.name,
+        driverPhone: activeRide.driverPhone || candidateDriver.phone,
+        driverPhoto: activeRide.driverPhoto || candidateDriver.avatarUrl,
+        vehicleNumber: activeRide.vehicleNumber || candidateDriver.vehicleNumber,
+        vehicleModel: activeRide.vehicleModel || candidateDriver.vehicleModel,
+        status: 'driver_assigned',
+        acceptedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setActiveRide((prev) => prev ? { ...prev, ...updates } : null);
+      triggerSound('success');
+      try {
+        await updateDoc(doc(db, 'rides', activeRide.id), sanitizeForFirestore(updates));
+      } catch {}
+    } else if (activeRide.status === 'driver_assigned' || activeRide.status === 'driver_arriving') {
+      const updates = {
+        status: 'driver_arrived' as const,
+        driverLocation: {
+          lat: activeRide.pickup.lat,
+          lng: activeRide.pickup.lng,
+        }
+      };
+      setActiveRide((prev) => prev ? { ...prev, ...updates } : null);
+      triggerSound('beep');
+      try {
+        await updateDoc(doc(db, 'rides', activeRide.id), sanitizeForFirestore(updates));
+      } catch {}
+    } else if (activeRide.status === 'driver_arrived') {
+      const updates = {
+        status: 'in_progress' as const,
+        startedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setActiveRide((prev) => prev ? { ...prev, ...updates } : null);
+      triggerSound('success');
+      try {
+        await updateDoc(doc(db, 'rides', activeRide.id), sanitizeForFirestore(updates));
+      } catch {}
+    } else if (activeRide.status === 'in_progress') {
+      await driverCompleteRide();
     }
   };
 
@@ -1893,6 +2086,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         createRideBooking,
         cancelRide,
         rateRide,
+        advanceRideStage,
         driverAcceptRide,
         driverDeclineRide,
         driverArriveAtPickup,

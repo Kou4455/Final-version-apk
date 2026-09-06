@@ -176,6 +176,75 @@ export const UserDashboard: React.FC = () => {
     fallbackPoint: POPULAR_LOCATIONS[0]
   });
 
+  // Live real-time Estimated Time of Arrival (ETA) calculation
+  const liveEtaData = useMemo(() => {
+    if (!activeRide) return null;
+
+    const status = activeRide.status;
+    const driverLoc = activeRide.driverLocation || (activeRide.pickup ? {
+      lat: activeRide.pickup.lat + 0.0035,
+      lng: activeRide.pickup.lng + 0.0028,
+    } : null);
+
+    if (status === 'driver_assigned' || status === 'driver_arriving') {
+      let distKm = 0.8;
+      if (driverLoc && activeRide.pickup) {
+        distKm = calculateDistanceKm(driverLoc, activeRide.pickup);
+      }
+      const mins = Math.max(1, Math.round(distKm * 3.2));
+      const arrivalDate = new Date(Date.now() + mins * 60000);
+      const arrivalClock = arrivalDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+      return {
+        stage: 'pickup',
+        badge: 'Captain Arriving',
+        etaText: mins <= 1 ? 'Arriving in ~1 min' : `Arriving in ~${mins} mins`,
+        etaClock: arrivalClock,
+        distanceText: `${distKm.toFixed(1)} km away`,
+        fullLabel: `Estimated Time of Arrival: ${arrivalClock} (~${mins} min${mins > 1 ? 's' : ''})`,
+      };
+    }
+
+    if (status === 'driver_arrived') {
+      return {
+        stage: 'arrived',
+        badge: 'Captain at Pickup',
+        etaText: 'Arrived at pickup location',
+        etaClock: 'Now',
+        distanceText: 'Waiting at spot',
+        fullLabel: 'Estimated Time of Arrival: Arrived Now',
+      };
+    }
+
+    if (status === 'in_progress') {
+      let distKm = activeRide.distanceKm || 2.4;
+      if (driverLoc && activeRide.dropoff) {
+        distKm = calculateDistanceKm(driverLoc, activeRide.dropoff);
+      }
+      const mins = Math.max(1, Math.round(distKm * 3.2));
+      const arrivalDate = new Date(Date.now() + mins * 60000);
+      const arrivalClock = arrivalDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+      return {
+        stage: 'in_progress',
+        badge: 'Trip in Progress',
+        etaText: mins <= 1 ? 'Reaching destination in < 1 min' : `Reaching in ~${mins} mins`,
+        etaClock: arrivalClock,
+        distanceText: `${distKm.toFixed(1)} km to dropoff`,
+        fullLabel: `Estimated Time of Arrival: ${arrivalClock} (~${mins} min${mins > 1 ? 's' : ''})`,
+      };
+    }
+
+    return null;
+  }, [
+    activeRide?.status,
+    activeRide?.driverLocation?.lat,
+    activeRide?.driverLocation?.lng,
+    activeRide?.pickup,
+    activeRide?.dropoff,
+    activeRide?.distanceKm
+  ]);
+
   useEffect(() => {
     const handleOpenProfile = () => setActiveNavTab('profile');
     const handleOpenHistory = () => setActiveNavTab('rides');
@@ -567,9 +636,12 @@ export const UserDashboard: React.FC = () => {
           triggerSound('beep');
         }}
         onCenterGps={refreshCurrentLocation}
-        heightClass="h-[230px] xs:h-[250px] sm:h-[280px]"
+        heightClass={
+          activeRide && activeRide.status !== 'completed' && activeRide.status !== 'cancelled' && activeRide.status !== 'idle'
+            ? "h-[290px] xs:h-[320px] sm:h-[360px] md:h-[400px]"
+            : "h-[230px] xs:h-[250px] sm:h-[280px]"
+        }
       />
-
 
       {/* Route & Booking Card */}
       <div className="bg-white rounded-3xl p-3.5 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-3.5 sm:space-y-4 w-full">
@@ -1220,17 +1292,56 @@ export const UserDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Ride Progress Status Banner */}
-          <div className="p-3 bg-[#F6F4F0] rounded-2xl flex items-center justify-between text-xs gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
-              <span className="font-semibold text-[#111111] truncate">
-                {activeRide.status === 'driver_assigned' && 'Toto Captain is arriving (2 mins)'}
-                {activeRide.status === 'driver_arrived' && 'Captain arrived at pickup spot!'}
-                {activeRide.status === 'in_progress' && 'Trip in progress to destination...'}
-              </span>
+          {/* Ride Progress Status Banner with Live Estimated Time of Arrival */}
+          <div 
+            id="live-eta-progress-banner"
+            className="p-3.5 bg-[#F6F4F0] rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2.5 border border-[#EDE8E0] shadow-2xs"
+          >
+            <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+              <div className="relative flex items-center justify-center mt-0.5 sm:mt-0 shrink-0">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping absolute" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 relative" />
+              </div>
+
+              <div className="min-w-0 space-y-0.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded-md font-mono">
+                    LIVE ETA
+                  </span>
+                  <span className="font-extrabold text-[#111111] text-xs sm:text-sm">
+                    {liveEtaData?.etaText || 'Calculating live arrival time...'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 text-[11px] text-gray-500 font-medium flex-wrap">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-[#FF6B2C] shrink-0" />
+                    <span>Estimated Time of Arrival: <strong className="text-neutral-800">{liveEtaData?.etaClock || 'Calculating...'}</strong></span>
+                  </span>
+                  {liveEtaData?.distanceText && (
+                    <>
+                      <span>•</span>
+                      <span className="text-gray-600">{liveEtaData.distanceText}</span>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="font-bold text-[#111111] shrink-0">₹{activeRide.totalFare}</div>
+
+            {/* Total Fare & Expected Arrival Badge */}
+            <div className="flex items-center justify-between sm:flex-col sm:items-end shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-[#E8E4DC]">
+              <div className="text-[10px] uppercase font-bold text-gray-400 sm:block hidden">
+                Total Fare
+              </div>
+              <div className="font-black text-[#111111] text-sm sm:text-base">
+                ₹{activeRide.totalFare}
+              </div>
+              {liveEtaData && (
+                <div className="text-[10px] font-bold text-emerald-700 font-mono bg-white px-2 py-0.5 rounded-md border border-neutral-200 shadow-2xs">
+                  {liveEtaData.etaClock === 'Now' ? 'AT SPOT' : `ETA ${liveEtaData.etaClock}`}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Actions: Communication, Safety Suite & Cancellation */}

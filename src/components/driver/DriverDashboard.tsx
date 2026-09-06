@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { ChatModal } from '../modals/ChatModal';
+import { TripCelebrationModal, CompletedTripSummary } from './TripCelebrationModal';
 import { DriverTripsPage } from './DriverTripsPage';
 import { DriverProfilePage } from './DriverProfilePage';
 
@@ -66,7 +67,8 @@ export const DriverDashboard: React.FC = () => {
   const [otpInput, setOtpInput] = useState('');
   const [otpError, setOtpError] = useState('');
   const [justAccepted, setJustAccepted] = useState(false);
-  const [showCashSettledModal, setShowCashSettledModal] = useState(false);
+  const [showCelebrationModal, setShowCelebrationModal] = useState(false);
+  const [celebratedTripData, setCelebratedTripData] = useState<CompletedTripSummary | null>(null);
   const [showUpiQrModal, setShowUpiQrModal] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isSimulatingTrip, setIsSimulatingTrip] = useState(false);
@@ -113,7 +115,7 @@ export const DriverDashboard: React.FC = () => {
     const handleOpenHistory = () => setActiveNavTab('rides');
     const handleCloseAll = () => {
       setActiveNavTab('home');
-      setShowCashSettledModal(false);
+      setShowCelebrationModal(false);
       setShowUpiQrModal(false);
     };
 
@@ -384,11 +386,26 @@ export const DriverDashboard: React.FC = () => {
     }
   };
 
-  // Handle Ride Complete
+  // Handle Ride Complete with Celebratory Confirmation Modal
   const handleCompleteRide = () => {
-    confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+    const targetRide = activeRide || currentRide;
+    if (targetRide) {
+      setCelebratedTripData({
+        id: targetRide.id,
+        passengerName: targetRide.userName || 'Passenger',
+        passengerPhone: targetRide.userPhone,
+        pickupName: targetRide.pickup.name,
+        dropoffName: targetRide.dropoff.name,
+        distanceKm: targetRide.distanceKm || 2.4,
+        totalFare: targetRide.totalFare,
+        driverEarnings: targetRide.driverEarnings || Math.round(targetRide.totalFare * 0.95),
+        paymentMethod: targetRide.paymentMethod || 'cash',
+        completedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      });
+    }
+    triggerSound('success');
     driverCompleteRide();
-    setShowCashSettledModal(true);
+    setShowCelebrationModal(true);
     setJustAccepted(false);
   };
 
@@ -896,29 +913,16 @@ export const DriverDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Cash Collected Modal */}
-      {showCashSettledModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-xs w-full p-6 text-center space-y-4 shadow-xl border border-neutral-200 animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-              <Check className="w-6 h-6 stroke-[3]" />
-            </div>
-            <div>
-              <h3 className="font-bold text-base text-[#111111]">Trip Completed!</h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Earnings of ₹{activeRide?.driverEarnings || 78} added to your balance.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowCashSettledModal(false)}
-              className="w-full py-2.5 bg-[#141414] hover:bg-black text-white font-bold text-xs rounded-2xl shadow-xs cursor-pointer"
-            >
-              Continue Workday
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Celebratory Trip Completion & Transaction Confirmation Modal */}
+      <TripCelebrationModal
+        isOpen={showCelebrationModal}
+        onClose={() => setShowCelebrationModal(false)}
+        tripData={celebratedTripData}
+        onReadyForNextRide={() => {
+          setShowCelebrationModal(false);
+          setCelebratedTripData(null);
+        }}
+      />
 
       {/* Driver Chat Modal with Passenger */}
       {activeRide && (

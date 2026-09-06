@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GeoPoint, SimulatedDriverMarker, ActiveRide, GpsLocationState } from '../../types';
 import { calculateBearing, fetchRouteBetweenPoints } from '../../utils/geoUtils';
+import { RideMapOverlay } from './RideMapOverlay';
 import { 
   Plus, 
   Minus, 
@@ -500,6 +501,22 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const currentSpeed = mode === 'driver' ? driverGpsState?.speedKmH || 0 : userGpsState?.speedKmH || 0;
   const currentAccuracy = mode === 'driver' ? driverGpsState?.accuracy : userGpsState?.accuracy;
 
+  const isRideBooked = Boolean(
+    activeRide &&
+    activeRide.status &&
+    activeRide.status !== 'idle' &&
+    activeRide.status !== 'cancelled' &&
+    activeRide.status !== 'completed'
+  );
+
+  const handleCenterOnDriver = useCallback((lat: number, lng: number) => {
+    setAutoFollow(false);
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.flyTo([lat, lng], 16, { animate: true, duration: 1 });
+    }
+  }, []);
+
   return (
     <div 
       id="interactive-map-container"
@@ -511,6 +528,18 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         className="w-full h-full absolute inset-0 z-0" 
         style={{ background: '#FAF8F5' }}
       />
+
+      {/* Ride Booked Map Overlay: Real-Time ETA & Driver Live Coordinates */}
+      {isRideBooked && activeRide && (
+        <RideMapOverlay
+          activeRide={activeRide}
+          driverGpsState={driverGpsState}
+          drivers={drivers}
+          pickup={pickup}
+          dropoff={dropoff}
+          onCenterOnDriver={handleCenterOnDriver}
+        />
+      )}
 
       {/* Top Left: Live GPS Status & Speedometer */}
       <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 max-w-[85%]">
