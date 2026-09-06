@@ -379,7 +379,7 @@ export const AdminDashboard: React.FC = () => {
           <div>
             <div className="text-[11px] font-bold tracking-wider uppercase text-[#C8622A] flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>RAPIDO TOTO ADMIN CONTROL CENTER</span>
+              <span>TOTO DRIVE ADMIN CONTROL CENTER</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-[#111111] tracking-tight">
               Enterprise Fleet Operations

@@ -54,6 +54,7 @@ import {
   isQuotaExceededError,
   subscribeToQuotaErrors
 } from '../lib/firebase';
+import { compressImageIfNeeded } from '../utils/imageCompressor';
 
 interface RideContextType {
   user: UserProfile | null;
@@ -137,6 +138,8 @@ interface RideContextType {
   dispatchRideRequest: (req: Partial<RideRequestDoc>) => Promise<void>;
 
   // Customer Wallet, Places, Safety, Support & Scheduling
+  activeNavTab: 'home' | 'rides' | 'profile';
+  setActiveNavTab: (tab: 'home' | 'rides' | 'profile') => void;
   walletBalance: number;
   addMoneyToWallet: (amount: number) => Promise<void>;
   savedPlaces: SavedPlaceItem[];
@@ -240,6 +243,12 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isScanningOffers, setIsScanningOffers] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState<TotoPartnerOffer | null>(null);
   const [isFirestoreQuotaExceeded, setIsFirestoreQuotaExceeded] = useState<boolean>(false);
+  const [activeNavTab, setActiveNavTabState] = useState<'home' | 'rides' | 'profile'>('home');
+
+  const setActiveNavTab = useCallback((tab: 'home' | 'rides' | 'profile') => {
+    setActiveNavTabState(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
   
   // Listen for global quota exceeded events from Firebase SDK layer
   useEffect(() => {
@@ -745,6 +754,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Signout error bypassed
     }
     setUser(null);
+    setActiveNavTabState('home');
     triggerSound('beep');
   };
 
@@ -798,6 +808,22 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const approvalId = `appr_${Date.now()}`;
       const driverDocId = `drv_${cleanPhone.replace(/\D/g, '').slice(-6) || Date.now().toString().slice(-6)}`;
 
+      // Defensively compress driverPhoto if needed (guarantee < 65KB)
+      let compressedDriverPhoto = data.driverPhoto;
+      if (compressedDriverPhoto) {
+        compressedDriverPhoto = await compressImageIfNeeded(compressedDriverPhoto, 65 * 1024);
+      }
+
+      // Defensively compress totoPhotos (cap at max 3 photos, each guaranteed < 65KB)
+      let compressedTotoPhotos: string[] | undefined = undefined;
+      if (data.totoPhotos && data.totoPhotos.length > 0) {
+        const sliced = data.totoPhotos.slice(0, 3);
+        const processed = await Promise.all(
+          sliced.map((p) => compressImageIfNeeded(p, 65 * 1024))
+        );
+        compressedTotoPhotos = processed.filter(Boolean) as string[];
+      }
+
       const approvalDoc: DriverApprovalRequest = {
         id: approvalId,
         driverName: data.driverName.trim(),
@@ -806,11 +832,17 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         vehicleNumber: data.vehicleNumber.trim().toUpperCase(),
         vehicleModel: data.vehicleModel.trim() || 'Mayuri Deluxe Li-ion',
         vehicleColor: data.vehicleColor.trim() || 'Emerald Green',
-        driverPhoto: data.driverPhoto || undefined,
-        totoPhotos: data.totoPhotos || undefined,
+        driverPhoto: compressedDriverPhoto || undefined,
+        totoPhotos: compressedTotoPhotos && compressedTotoPhotos.length > 0 ? compressedTotoPhotos : undefined,
         status: 'pending',
         createdAt: new Date().toISOString()
       };
+
+      // Safeguard: Ensure document JSON payload is well below 500KB (Firestore limit is 1MB)
+      const payloadString = JSON.stringify(approvalDoc);
+      if (payloadString.length > 400 * 1024 && approvalDoc.totoPhotos && approvalDoc.totoPhotos.length > 1) {
+        approvalDoc.totoPhotos = approvalDoc.totoPhotos.slice(0, 1);
+      }
 
       // Store in driver_approvals collection
       await setDoc(doc(db, 'driver_approvals', approvalId), sanitizeForFirestore(approvalDoc));
@@ -832,10 +864,10 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         totalEarnings: 0,
         acceptanceRate: 100,
         isOnline: false,
-        avatarUrl: data.driverPhoto || `https://api.dicebear.com/7.x/personas/svg?seed=${cleanPhone}`,
-        driverPhoto: data.driverPhoto || undefined,
-        totoPhotos: data.totoPhotos || undefined,
-        totoPhoto: data.totoPhotos?.[0] || undefined,
+        avatarUrl: compressedDriverPhoto || `https://api.dicebear.com/7.x/personas/svg?seed=${cleanPhone}`,
+        driverPhoto: compressedDriverPhoto || undefined,
+        totoPhotos: approvalDoc.totoPhotos,
+        totoPhoto: approvalDoc.totoPhotos?.[0] || undefined,
         kycVerified: false,
         registeredAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -1875,6 +1907,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginDriverWithPin,
         updateDriverVehicleDetails,
         dispatchRideRequest,
+        activeNavTab,
+        setActiveNavTab,
         walletBalance,
         addMoneyToWallet,
         savedPlaces,

@@ -1,55 +1,88 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useRide } from '../../context/RideContext';
 import { Home, Car, User } from 'lucide-react';
+import { motion } from 'motion/react';
 
 export const BottomNavigation: React.FC = () => {
-  const { activeRole, user, driver, triggerSound } = useRide();
-  const [activeTab, setActiveTab] = useState('Home');
-
-  useEffect(() => {
-    const handleNavigateHome = () => setActiveTab('Home');
-    window.addEventListener('navigateHomeTab', handleNavigateHome);
-    return () => window.removeEventListener('navigateHomeTab', handleNavigateHome);
-  }, []);
+  const { activeRole, user, driver, triggerSound, activeNavTab, setActiveNavTab } = useRide();
 
   // Show bottom navigation for both passenger and driver apps when logged in
   if (activeRole === 'admin') return null;
   if (activeRole === 'user' && !user) return null;
   if (activeRole === 'driver' && !driver) return null;
 
-  const navItems = [
-    { icon: Home, label: 'Home' },
-    { icon: Car, label: 'My Ride' },
-    { icon: User, label: 'Profile' },
+  const navItems: Array<{ id: 'home' | 'rides' | 'profile'; icon: typeof Home; label: string }> = [
+    { id: 'home', icon: Home, label: 'Home' },
+    { id: 'rides', icon: Car, label: 'My Ride' },
+    { id: 'profile', icon: User, label: 'Profile' },
   ];
 
   return (
-    <nav className="sticky bottom-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-3 sm:px-6 py-2.5 select-none mt-auto shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)]">
-      <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
-        {navItems.map((item, index) => {
-          const isActive = activeTab === item.label;
+    <nav className="fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.25rem)] sm:w-auto max-w-sm sm:max-w-md select-none pointer-events-auto pb-[env(safe-area-inset-bottom,0px)]">
+      {/* Outer Floating Pill Capsule Container (CSS selector 2 target) */}
+      <div className="flex items-center justify-between w-full sm:w-auto gap-1 sm:gap-2 p-1.5 sm:p-2 rounded-full bg-[#FFFDF9]/95 backdrop-blur-xl border border-[#EDE6D8] shadow-[0_12px_40px_rgba(30,20,10,0.12),0_4px_14px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.03]">
+        {navItems.map((item) => {
+          const isActive = activeNavTab === item.id;
           return (
             <button
-              key={index}
+              key={item.id}
+              type="button"
               onClick={() => {
-                setActiveTab(item.label);
-                if (item.label === 'Profile') {
+                setActiveNavTab(item.id);
+                if (item.id === 'profile') {
                   window.dispatchEvent(new CustomEvent('openProfileSettings'));
-                } else if (item.label === 'My Ride') {
+                } else if (item.id === 'rides') {
                   window.dispatchEvent(new CustomEvent('openRideHistory'));
-                } else if (item.label === 'Home') {
+                } else {
                   window.dispatchEvent(new CustomEvent('closeAllModals'));
                 }
                 triggerSound('click');
               }}
-              className={`flex flex-1 items-center justify-center gap-1.5 sm:gap-2 px-3.5 py-2 sm:py-2 rounded-xl transition-all duration-150 cursor-pointer shadow-xs active:scale-[0.96] border ${
-                isActive
-                  ? 'bg-[#181818] hover:bg-black text-white border-neutral-800 hover:border-neutral-700'
-                  : 'bg-[#FAF8F5] hover:bg-neutral-100 text-neutral-800 border-neutral-200'
-              }`}
+              className="relative flex-1 sm:flex-initial flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-6 py-2.5 sm:py-3 rounded-full cursor-pointer transition-colors duration-200 select-none group focus:outline-hidden min-h-[48px] sm:min-h-[50px]"
+              aria-label={item.label}
             >
-              <item.icon className={`w-4 h-4 sm:w-4 h-4 ${isActive ? 'text-[#E07A00]' : 'text-neutral-500'}`} />
-              <span className="text-xs font-bold">
+              {/* Animated Floating Pill Background Indicator */}
+              {isActive && (
+                <>
+                  <motion.div
+                    layoutId="activeNavPillHalo"
+                    className="absolute -inset-0.5 rounded-full bg-amber-200/50 blur-[3px]"
+                    transition={{
+                      type: 'spring',
+                      stiffness: 400,
+                      damping: 32,
+                    }}
+                  />
+                  <motion.div
+                    layoutId="activeNavPill"
+                    className="absolute inset-0 rounded-full bg-[#FFA726] shadow-[0_3px_14px_rgba(255,167,38,0.42)]"
+                    transition={{
+                      type: 'spring',
+                      stiffness: 460,
+                      damping: 34,
+                      mass: 0.85,
+                    }}
+                  />
+                </>
+              )}
+
+              {/* Icon */}
+              <item.icon
+                className={`relative z-10 w-5 h-5 sm:w-5 sm:h-5 transition-all duration-200 shrink-0 ${
+                  isActive
+                    ? 'stroke-[2.25] text-[#141414]'
+                    : 'stroke-[1.85] text-[#4A4A4A] group-hover:text-[#18181B]'
+                }`}
+              />
+
+              {/* Label */}
+              <span
+                className={`relative z-10 text-xs sm:text-sm font-semibold tracking-tight whitespace-nowrap transition-colors duration-200 ${
+                  isActive
+                    ? 'font-extrabold text-[#141414]'
+                    : 'font-medium text-[#4A4A4A] group-hover:text-[#18181B]'
+                }`}
+              >
                 {item.label}
               </span>
             </button>
@@ -59,3 +92,4 @@ export const BottomNavigation: React.FC = () => {
     </nav>
   );
 };
+

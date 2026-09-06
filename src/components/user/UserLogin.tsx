@@ -194,7 +194,7 @@ export const UserLogin: React.FC<UserLoginProps> = ({ onLoginSuccess, onBack }) 
   return (
     <div 
       id="user-login-screen" 
-      className="w-full flex-1 sm:flex-initial sm:max-w-md md:max-w-lg mx-auto bg-white sm:rounded-3xl border-0 sm:border border-[#EDE8E0] shadow-none sm:shadow-sm p-5 sm:p-8 text-[#111111] font-sans select-none animate-in fade-in duration-200 flex flex-col justify-between min-h-[calc(100vh-65px)] sm:min-h-0 overflow-y-auto overscroll-contain"
+      className="w-full flex-1 sm:flex-initial sm:max-w-md md:max-w-lg mx-auto bg-white sm:rounded-3xl border-0 sm:border border-[#EDE8E0] shadow-none sm:shadow-sm p-5 sm:p-8 text-[#111111] font-sans animate-in fade-in duration-200 flex flex-col justify-between min-h-[calc(100vh-65px)] sm:min-h-0 touch-pan-y"
     >
       <div className="space-y-5">
         {/* Top Header & App Icon removed */}
@@ -400,10 +400,6 @@ export const UserLogin: React.FC<UserLoginProps> = ({ onLoginSuccess, onBack }) 
             </button>
           </form>
         )}
-      </div>
-
-      <div className="pt-5 border-t border-neutral-100 mt-5 text-center text-[10px] text-neutral-400 font-medium">
-        Encrypted Transport • Rapid Toto Ride Hailing
       </div>
     </div>
   );

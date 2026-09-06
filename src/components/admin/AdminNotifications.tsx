@@ -64,7 +64,7 @@ export const AdminNotifications: React.FC = () => {
     },
     {
       id: 'notif_2',
-      title: 'Welcome to Rapido Toto Green Fleet!',
+      title: 'Welcome to Toto Drive Green Fleet!',
       message: 'Zero emissions, silent rides, guaranteed neighborhood mobility.',
       target: 'customers',
       zone: 'All Kolkata Zones',

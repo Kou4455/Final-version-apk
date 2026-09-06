@@ -3,8 +3,6 @@ import { useRide } from '../../context/RideContext';
 import { InteractiveMap } from '../map/InteractiveMap';
 import { POPULAR_LOCATIONS } from '../../data/appData';
 import { useMobileGps } from '../../hooks/useMobileGps';
-import { DriverSettingsModal } from './DriverSettingsModal';
-import { TripLedgerModal } from './TripLedgerModal';
 import { TripRecord, RideRequestDoc } from '../../types';
 import { 
   db, 
@@ -34,12 +32,12 @@ import {
   ArrowRight,
   Sparkles,
   Layers,
-  History,
-  MessageSquare,
-  User
+  MessageSquare
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { ChatModal } from '../modals/ChatModal';
+import { DriverTripsPage } from './DriverTripsPage';
+import { DriverProfilePage } from './DriverProfilePage';
 
 export const DriverDashboard: React.FC = () => {
   const { 
@@ -58,12 +56,12 @@ export const DriverDashboard: React.FC = () => {
     createRideBooking,
     dispatchRideRequest,
     setActiveRole,
-    triggerSound 
+    triggerSound,
+    activeNavTab,
+    setActiveNavTab
   } = useRide();
 
   // Modals & UI states
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [isDriverChatOpen, setIsDriverChatOpen] = useState(false);
   const [otpInput, setOtpInput] = useState('');
   const [otpError, setOtpError] = useState('');
@@ -111,11 +109,10 @@ export const DriverDashboard: React.FC = () => {
 
   // Bottom Navigation listeners
   useEffect(() => {
-    const handleOpenProfile = () => setShowSettingsModal(true);
-    const handleOpenHistory = () => setShowLedgerModal(true);
+    const handleOpenProfile = () => setActiveNavTab('profile');
+    const handleOpenHistory = () => setActiveNavTab('rides');
     const handleCloseAll = () => {
-      setShowSettingsModal(false);
-      setShowLedgerModal(false);
+      setActiveNavTab('home');
       setShowCashSettledModal(false);
       setShowUpiQrModal(false);
     };
@@ -129,7 +126,7 @@ export const DriverDashboard: React.FC = () => {
       window.removeEventListener('openRideHistory', handleOpenHistory);
       window.removeEventListener('closeAllModals', handleCloseAll);
     };
-  }, []);
+  }, [setActiveNavTab]);
 
   // Set just accepted indicator
   useEffect(() => {
@@ -397,9 +394,21 @@ export const DriverDashboard: React.FC = () => {
 
   return (
     <div className="w-full max-w-lg mx-auto py-2 px-3 sm:px-4 font-sans select-none space-y-4 flex-1">
-      {/* -------------------------------------------------------------------------- */}
-      {/* FEATURE 1: RIDE REQUEST NOTIFICATION BANNER (Top of DriverDashboard)        */}
-      {/* -------------------------------------------------------------------------- */}
+      {activeNavTab === 'rides' ? (
+        <DriverTripsPage
+          trips={completedTrips}
+          totalEarnings={firestoreTotalEarnings}
+          onNavigateHome={() => setActiveNavTab('home')}
+        />
+      ) : activeNavTab === 'profile' ? (
+        <DriverProfilePage
+          onNavigateHome={() => setActiveNavTab('home')}
+        />
+      ) : (
+        <>
+          {/* -------------------------------------------------------------------------- */}
+          {/* FEATURE 1: RIDE REQUEST NOTIFICATION BANNER (Top of DriverDashboard)        */}
+          {/* -------------------------------------------------------------------------- */}
       {showRequestBanner && incomingRequest && isOnline && (
         <div 
           id="driver-ride-request-banner"
@@ -853,26 +862,8 @@ export const DriverDashboard: React.FC = () => {
           </button>
         </div>
       )}
-
-      {/* Settings Modal (Triggered by top-left avatar/username click) */}
-      <DriverSettingsModal
-        isOpen={showSettingsModal}
-        onClose={() => {
-          setShowSettingsModal(false);
-          window.dispatchEvent(new CustomEvent('navigateHomeTab'));
-        }}
-      />
-
-      {/* Trip History / Earnings Ledger Modal */}
-      <TripLedgerModal
-        isOpen={showLedgerModal}
-        onClose={() => {
-          setShowLedgerModal(false);
-          window.dispatchEvent(new CustomEvent('navigateHomeTab'));
-        }}
-        trips={completedTrips}
-        totalEarnings={firestoreTotalEarnings}
-      />
+        </>
+      )}
 
       {/* UPI QR Payment Modal */}
       {showUpiQrModal && (

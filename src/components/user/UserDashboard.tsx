@@ -51,13 +51,13 @@ import { WalletModal } from '../modals/WalletModal';
 import { ScheduleRideModal } from '../modals/ScheduleRideModal';
 import { SupportModal } from '../modals/SupportModal';
 import { SavedPlacesModal } from '../modals/SavedPlacesModal';
-import { RideHistoryModal } from '../modals/RideHistoryModal';
 import { SafetyCenterModal } from '../modals/SafetyCenterModal';
 import { ChatModal } from '../modals/ChatModal';
 import { SosModal } from '../modals/SosModal';
 import { FareBreakdownModal } from '../modals/FareBreakdownModal';
 import { CouponsModal } from '../modals/CouponsModal';
-import { ProfileSettingsModal } from '../modals/ProfileSettingsModal';
+import { RideHistoryPage } from './RideHistoryPage';
+import { ProfileSettingsPage } from './ProfileSettingsPage';
 
 const TotoRickshawIcon = ({ className = "w-5 h-5", color = "#FF6B2C" }: { className?: string; color?: string }) => (
   <svg 
@@ -121,7 +121,9 @@ export const UserDashboard: React.FC = () => {
     createScheduledRide,
     completedTrips,
     triggerSound,
-    logoutUser
+    logoutUser,
+    activeNavTab,
+    setActiveNavTab
   } = useRide();
 
   const [pickup, setPickup] = useState<GeoPoint>(POPULAR_LOCATIONS[0]);
@@ -143,11 +145,9 @@ export const UserDashboard: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Modals Visibility States
-  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [isSavedPlacesOpen, setIsSavedPlacesOpen] = useState(false);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isSosOpen, setIsSosOpen] = useState(false);
@@ -177,13 +177,10 @@ export const UserDashboard: React.FC = () => {
   });
 
   useEffect(() => {
-    const handleOpenProfile = () => setIsProfileSettingsOpen(true);
-    const handleOpenHistory = () => setIsHistoryOpen(true);
-    const handleCloseAll = () => {
-      setIsProfileSettingsOpen(false);
-      setIsHistoryOpen(false);
-      // add more if necessary, but these are the main bottom nav ones
-    };
+    const handleOpenProfile = () => setActiveNavTab('profile');
+    const handleOpenHistory = () => setActiveNavTab('rides');
+    const handleCloseAll = () => setActiveNavTab('home');
+
     window.addEventListener('openProfileSettings', handleOpenProfile);
     window.addEventListener('openRideHistory', handleOpenHistory);
     window.addEventListener('closeAllModals', handleCloseAll);
@@ -192,7 +189,7 @@ export const UserDashboard: React.FC = () => {
       window.removeEventListener('openRideHistory', handleOpenHistory);
       window.removeEventListener('closeAllModals', handleCloseAll);
     };
-  }, []);
+  }, [setActiveNavTab]);
 
   // When location picker opens, autofocus input and reset query if desired
   useEffect(() => {
@@ -328,7 +325,7 @@ export const UserDashboard: React.FC = () => {
       triggerSound('alert');
       return;
     }
-    findNearbyTotoOffers(pickup, dropoff, 'RAPIDOTOTO');
+    findNearbyTotoOffers(pickup, dropoff, selectedTier.name);
   };
 
   // Handle passenger selecting a specific Toto Partner and price
@@ -394,6 +391,44 @@ export const UserDashboard: React.FC = () => {
     rateRide(ratingScore, ratingComment);
   };
 
+  // Vehicle Tiers matching user specification
+  const VEHICLE_TIERS = useMemo(() => [
+    {
+      id: 'erickshaw',
+      name: 'E-Rickshaw (1 Person)',
+      capacity: '1 Person',
+      baseFare: 20,
+      perKmRate: 14,
+    },
+    {
+      id: 'toto_premium',
+      name: 'Toto Premium (2 Person)',
+      capacity: '2 Person',
+      baseFare: 30,
+      perKmRate: 16,
+    },
+    {
+      id: 'toto_deluxe',
+      name: 'Toto Deluxe (3 Person)',
+      capacity: '3 Person',
+      baseFare: 60,
+      perKmRate: 18,
+    },
+    {
+      id: 'full_reserve',
+      name: 'Full Reserve Toto',
+      capacity: 'Full Reserve',
+      baseFare: 500,
+      perKmRate: 20,
+    },
+  ], []);
+
+  const [selectedTierId, setSelectedTierId] = useState<string>('erickshaw');
+
+  const selectedTier = useMemo(() => {
+    return VEHICLE_TIERS.find((t) => t.id === selectedTierId) || VEHICLE_TIERS[0];
+  }, [VEHICLE_TIERS, selectedTierId]);
+
   // Calculate estimated distance & fare
   const estimatedDistanceKm = useMemo(() => {
     if (!pickup?.lat || !pickup?.lng || !dropoff?.lat || !dropoff?.lng) return 2.2;
@@ -404,10 +439,10 @@ export const UserDashboard: React.FC = () => {
     return Math.max(0.8, Number(d.toFixed(1)));
   }, [pickup, dropoff]);
 
-  const baseFare = 20;
-  const distanceCharge = Math.round(estimatedDistanceKm * 8);
-  const timeCharge = Math.round(estimatedDistanceKm * 2);
-  const rawFare = baseFare + distanceCharge + timeCharge;
+  const baseFare = selectedTier.baseFare;
+  const distanceCharge = Math.round(estimatedDistanceKm * selectedTier.perKmRate);
+  const timeCharge = 0;
+  const rawFare = baseFare + distanceCharge;
 
   const couponDiscount = useMemo(() => {
     if (!appliedCoupon) return 0;
@@ -418,19 +453,97 @@ export const UserDashboard: React.FC = () => {
   const currentFare = activeRide?.totalFare || Math.max(15, rawFare - couponDiscount);
 
   return (
-    <div className="w-full max-w-md mx-auto py-2 px-3 sm:px-0 font-sans select-none space-y-3.5">
-      {/* Top Header Section */}
-      <div className="flex items-center justify-between pt-1 pb-1">
-        <div>
-          <div className="text-[11px] font-bold tracking-wider uppercase text-[#C8622A] flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>LIVE GPS ACTIVE</span>
+    <div className="w-full max-w-lg md:max-w-xl mx-auto py-2 px-2.5 sm:px-4 font-sans select-none space-y-3.5 flex-1 flex flex-col">
+      {activeNavTab === 'rides' ? (
+        <RideHistoryPage
+          activeRide={activeRide}
+          completedTrips={completedTrips}
+          onBookAgain={(pName, dName) => {
+            const matchedPickup = POPULAR_LOCATIONS.find((l) => l.name === pName) || {
+              name: pName,
+              address: pName,
+              lat: 22.5804,
+              lng: 88.4378
+            };
+            const matchedDropoff = POPULAR_LOCATIONS.find((l) => l.name === dName) || {
+              name: dName,
+              address: dName,
+              lat: 22.5867,
+              lng: 88.4178
+            };
+            setPickup(matchedPickup);
+            setDropoff(matchedDropoff);
+            setActiveNavTab('home');
+            triggerSound('beep');
+          }}
+          onOpenReceipt={(trip) => {
+            const rideItem: ActiveRide = {
+              id: trip.rideId || trip.id,
+              userId: user?.id || 'usr_passenger',
+              userName: user?.name || trip.passengerName || 'Passenger',
+              userPhone: user?.phone || '+91 98311 02458',
+              userRating: 4.9,
+              pickup: { name: trip.pickupName, lat: 22.5804, lng: 88.4378, address: trip.pickupName },
+              dropoff: { name: trip.dropoffName, lat: 22.5867, lng: 88.4178, address: trip.dropoffName },
+              vehicleType: 'toto',
+              totalFare: trip.fare,
+              basePrice: 20,
+              discount: 0,
+              driverEarnings: Math.round(trip.fare * 0.85),
+              distanceKm: trip.distanceKm,
+              estimatedMins: Math.round(trip.distanceKm * 4),
+              paymentMethod: trip.paymentMethod || 'cash',
+              paymentStatus: 'paid',
+              status: 'completed',
+              otp: '8492',
+              driverName: 'Subhashish Mondal',
+              vehicleNumber: 'WB-06-ER-4821',
+              driverPhone: '+91 98745 22019',
+              bookedAt: trip.completedAt || new Date().toISOString()
+            };
+            setReceiptRideData(rideItem);
+            setIsReceiptOpen(true);
+            triggerSound('click');
+          }}
+          onReportIssue={(tripId) => {
+            setSupportRideId(tripId);
+            setIsSupportOpen(true);
+            triggerSound('click');
+          }}
+          onNavigateHome={() => setActiveNavTab('home')}
+        />
+      ) : activeNavTab === 'profile' ? (
+        <ProfileSettingsPage
+          user={user}
+          walletBalance={walletBalance}
+          completedRidesCount={completedTrips.length}
+          onOpenWallet={() => setIsWalletOpen(true)}
+          onOpenSchedule={() => setIsScheduleOpen(true)}
+          onOpenSavedPlaces={() => setIsSavedPlacesOpen(true)}
+          onOpenHistory={() => setActiveNavTab('rides')}
+          onOpenSafety={() => setIsSafetyOpen(true)}
+          onOpenSupport={() => setIsSupportOpen(true)}
+          onOpenCoupons={() => setIsCouponsOpen(true)}
+          onLogout={() => {
+            logoutUser();
+            triggerSound('beep');
+          }}
+          onNavigateHome={() => setActiveNavTab('home')}
+        />
+      ) : (
+        <>
+          {/* Top Header Section */}
+          <div className="flex items-center justify-between pt-1 pb-1 w-full">
+            <div>
+              <div className="text-[11px] font-bold tracking-wider uppercase text-[#C8622A] flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>LIVE GPS ACTIVE</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-[#111111] tracking-tight">
+                Where to next?
+              </h1>
+            </div>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#111111] tracking-tight">
-            Where to next?
-          </h1>
-        </div>
-      </div>
 
       {/* Real-time Interactive Leaflet Map with Mobile GPS Tracking */}
       <InteractiveMap
@@ -454,12 +567,12 @@ export const UserDashboard: React.FC = () => {
           triggerSound('beep');
         }}
         onCenterGps={refreshCurrentLocation}
-        heightClass="h-[230px] sm:h-[260px]"
+        heightClass="h-[230px] xs:h-[250px] sm:h-[280px]"
       />
 
 
       {/* Route & Booking Card */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-3.5 sm:space-y-4">
+      <div className="bg-white rounded-3xl p-3.5 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-3.5 sm:space-y-4 w-full">
         {/* Unified Search Bar matching search bar.jpeg */}
         <div 
           id="unified-search-bar"
@@ -546,31 +659,78 @@ export const UserDashboard: React.FC = () => {
           </div>
         </div>
 
+        {/* Vehicle / Ride Tier Selection Buttons (Matching user screenshot) */}
+        <div 
+          id="vehicle-tier-selection-list" 
+          className="space-y-2.5 pt-1 w-full"
+        >
+          {VEHICLE_TIERS.map((tier) => {
+            const isSelected = selectedTierId === tier.id;
+            const tierFare = tier.baseFare + Math.round(estimatedDistanceKm * tier.perKmRate);
+            return (
+              <button
+                key={tier.id}
+                id={`vehicle-tier-${tier.id}`}
+                type="button"
+                onClick={() => {
+                  setSelectedTierId(tier.id);
+                  triggerSound('beep');
+                }}
+                className={`w-full p-4 rounded-2xl sm:rounded-3xl text-left transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
+                  isSelected
+                    ? 'border-2 border-[#111111] bg-white shadow-xs'
+                    : 'border border-[#E5E5E5] bg-white hover:border-neutral-300 hover:bg-[#FAFAFA]'
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className={`text-sm sm:text-[15px] font-bold tracking-tight ${
+                    isSelected ? 'text-[#111111]' : 'text-[#1F1F1F]'
+                  }`}>
+                    {tier.name}
+                  </div>
+                  <div className="text-xs sm:text-[13px] text-neutral-500 font-normal pt-1">
+                    Base: ₹{tier.baseFare} • Per KM: ₹{tier.perKmRate}
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <div className="text-sm sm:text-base font-extrabold text-[#111111]">
+                    ₹{tierFare}
+                  </div>
+                  <div className="text-[10px] font-medium text-neutral-400">
+                    {estimatedDistanceKm} km
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Payment Method Selector Pills */}
-        <div className="flex items-center gap-1.5 pt-1 border-t border-neutral-100">
+        <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-neutral-100 w-full">
           <button
             type="button"
             onClick={() => setPaymentMethod('cash')}
-            className={`flex-1 min-h-[38px] py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+            className={`w-full min-h-[42px] py-1.5 px-2 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
               paymentMethod === 'cash'
                 ? 'bg-[#181818] text-white shadow-2xs'
                 : 'bg-[#F6F4F0] text-gray-600 hover:bg-[#EAE6DE]'
             }`}
           >
-            <CreditCard className="w-3.5 h-3.5" />
-            <span>Cash</span>
+            <CreditCard className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Cash</span>
           </button>
           <button
             type="button"
             onClick={() => setPaymentMethod('upi')}
-            className={`flex-1 min-h-[38px] py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+            className={`w-full min-h-[42px] py-1.5 px-2 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
               paymentMethod === 'upi'
                 ? 'bg-[#181818] text-white shadow-2xs'
                 : 'bg-[#F6F4F0] text-gray-600 hover:bg-[#EAE6DE]'
             }`}
           >
-            <QrCode className="w-3.5 h-3.5 text-[#FF6B2C]" />
-            <span>UPI QR</span>
+            <QrCode className="w-3.5 h-3.5 text-[#FF6B2C] shrink-0" />
+            <span className="truncate">UPI QR</span>
           </button>
           <button
             type="button"
@@ -580,25 +740,25 @@ export const UserDashboard: React.FC = () => {
                 setIsWalletOpen(true);
               }
             }}
-            className={`flex-1 min-h-[38px] py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+            className={`w-full min-h-[42px] py-1.5 px-2 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
               paymentMethod === 'wallet'
                 ? 'bg-[#181818] text-white shadow-2xs'
                 : 'bg-[#F6F4F0] text-gray-600 hover:bg-[#EAE6DE]'
             }`}
           >
-            <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+            <Wallet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             <span className="truncate">Wallet (₹{walletBalance})</span>
           </button>
         </div>
 
         {/* Coupons and Fare Breakdown Row */}
-        <div className="flex items-center justify-between text-xs pt-0.5 px-0.5">
+        <div className="flex items-center justify-between text-xs pt-0.5 px-0.5 w-full">
           <button
             type="button"
             onClick={() => { setIsCouponsOpen(true); triggerSound('beep'); }}
-            className="flex items-center gap-1 text-[#C8622A] hover:text-[#9E4616] font-bold cursor-pointer transition-colors"
+            className="flex items-center gap-1 text-[#C8622A] hover:text-[#9E4616] font-bold cursor-pointer transition-colors min-h-[36px]"
           >
-            <Tag className="w-3.5 h-3.5 text-[#FF6B2C]" />
+            <Tag className="w-3.5 h-3.5 text-[#FF6B2C] shrink-0" />
             <span className="truncate">
               {appliedCoupon ? `${appliedCoupon.code} (-₹${couponDiscount})` : 'Apply Coupon'}
             </span>
@@ -607,10 +767,10 @@ export const UserDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => { setIsFareBreakdownOpen(true); triggerSound('beep'); }}
-            className="text-gray-600 hover:text-black font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+            className="text-gray-600 hover:text-black font-semibold flex items-center gap-1 cursor-pointer transition-colors min-h-[36px]"
           >
             <span>Est. ₹{currentFare}</span>
-            <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+            <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
           </button>
         </div>
 
@@ -620,7 +780,7 @@ export const UserDashboard: React.FC = () => {
           type="button"
           onClick={handleFindRide}
           disabled={Boolean(activeRide && activeRide.status !== 'completed' && activeRide.status !== 'cancelled')}
-          className="w-full min-h-[46px] bg-[#141414] hover:bg-black active:scale-[0.99] text-white font-bold py-3 px-4 rounded-2xl flex items-center justify-center gap-2 text-sm shadow-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full min-h-[48px] bg-[#141414] hover:bg-black active:scale-[0.99] text-white font-bold py-3 px-4 rounded-2xl flex items-center justify-center gap-2 text-sm shadow-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isScanningOffers ? (
             <>
@@ -992,16 +1152,16 @@ export const UserDashboard: React.FC = () => {
 
       {/* Status 1: Ride Requested (Screenshot 1 & 2 exact banner) */}
       {activeRide && activeRide.status === 'searching' && (
-        <div className="bg-[#EAF5ED] text-[#1E3A24] rounded-2xl p-4 flex items-center justify-between border border-[#D5EBDA] shadow-xs animate-in fade-in duration-300">
-          <div className="flex items-center gap-3">
+        <div className="w-full bg-[#EAF5ED] text-[#1E3A24] rounded-2xl p-3.5 sm:p-4 flex items-center justify-between border border-[#D5EBDA] shadow-xs animate-in fade-in duration-300">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div className="w-8 h-8 rounded-full bg-[#23864A] text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
               <Check className="w-4 h-4 text-white stroke-[3]" />
             </div>
-            <div>
-              <div className="text-sm font-bold text-[#111111]">
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-[#111111] truncate">
                 Ride requested
               </div>
-              <div className="text-xs text-[#555555]">
+              <div className="text-xs text-[#555555] truncate">
                 {activeRide.driverName 
                   ? `Selected Toto partner ${activeRide.driverName} notified.` 
                   : 'Your toto request is visible to nearby drivers.'}
@@ -1016,35 +1176,35 @@ export const UserDashboard: React.FC = () => {
 
       {/* Status 2: Driver Assigned & En Route */}
       {activeRide && (activeRide.status === 'driver_assigned' || activeRide.status === 'driver_arrived' || activeRide.status === 'in_progress') && (
-        <div className="bg-white rounded-3xl p-5 shadow-xs border border-[#EDE8E0] space-y-4 animate-in fade-in duration-300">
+        <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-3.5 sm:space-y-4 animate-in fade-in duration-300">
           {/* Top Driver Info */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
               {activeRide.driverPhoto ? (
                 <img 
                   src={activeRide.driverPhoto} 
                   alt={activeRide.driverName}
                   referrerPolicy="no-referrer"
-                  className="w-11 h-11 rounded-full object-cover border border-neutral-200 shadow-xs"
+                  className="w-11 h-11 rounded-full object-cover border border-neutral-200 shadow-xs shrink-0"
                 />
               ) : (
-                <div className="w-11 h-11 rounded-full bg-[#FDE8DC] text-[#C8622A] flex items-center justify-center font-bold text-base shadow-xs">
+                <div className="w-11 h-11 rounded-full bg-[#FDE8DC] text-[#C8622A] flex items-center justify-center font-bold text-base shadow-xs shrink-0">
                   {activeRide.driverName ? activeRide.driverName.charAt(0) : 'S'}
                 </div>
               )}
-              <div>
-                <div className="text-sm font-bold text-[#111111]">
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-[#111111] truncate">
                   {activeRide.driverName || 'Subhashish Mondal'}
                 </div>
-                <div className="flex items-center gap-2 text-xs text-gray-500">
+                <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-gray-500 truncate">
                   <span className="font-mono">{activeRide.vehicleNumber || 'WB-06-ER-4821'}</span>
                   <span>•</span>
-                  <span className="flex items-center text-amber-600 font-semibold">
+                  <span className="flex items-center text-amber-600 font-semibold shrink-0">
                     ★ 4.94
                   </span>
                 </div>
                 {activeRide.selectedOfferTag && (
-                  <div className="text-[10px] text-[#C8622A] font-bold mt-0.5">
+                  <div className="text-[10px] text-[#C8622A] font-bold mt-0.5 truncate">
                     {activeRide.selectedOfferTag}
                   </div>
                 )}
@@ -1052,38 +1212,38 @@ export const UserDashboard: React.FC = () => {
             </div>
 
             {/* OTP Code Badge */}
-            <div className="text-right">
+            <div className="text-right shrink-0">
               <div className="text-[10px] uppercase font-bold text-gray-400">PIN OTP</div>
-              <div className="text-lg font-black tracking-widest text-[#111111] font-mono">
+              <div className="text-base sm:text-lg font-black tracking-widest text-[#111111] font-mono">
                 {activeRide.otp}
               </div>
             </div>
           </div>
 
           {/* Ride Progress Status Banner */}
-          <div className="p-3 bg-[#F6F4F0] rounded-2xl flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-              <span className="font-semibold text-[#111111]">
+          <div className="p-3 bg-[#F6F4F0] rounded-2xl flex items-center justify-between text-xs gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
+              <span className="font-semibold text-[#111111] truncate">
                 {activeRide.status === 'driver_assigned' && 'Toto Captain is arriving (2 mins)'}
                 {activeRide.status === 'driver_arrived' && 'Captain arrived at pickup spot!'}
                 {activeRide.status === 'in_progress' && 'Trip in progress to destination...'}
               </span>
             </div>
-            <div className="font-bold text-[#111111]">₹{activeRide.totalFare}</div>
+            <div className="font-bold text-[#111111] shrink-0">₹{activeRide.totalFare}</div>
           </div>
 
           {/* Actions: Communication, Safety Suite & Cancellation */}
           <div className="space-y-2 pt-1">
             {/* 4-button Rapid Action Bar */}
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
               <a
                 href={`tel:${activeRide.driverPhone || '+919874522019'}`}
-                className="py-2.5 px-1.5 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors"
+                className="min-h-[44px] py-2 px-1 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors"
                 title="Call Captain"
               >
-                <Phone className="w-4 h-4 text-emerald-600" />
-                <span>Call</span>
+                <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="truncate">Call</span>
               </a>
 
               <button
@@ -1092,11 +1252,11 @@ export const UserDashboard: React.FC = () => {
                   setIsChatOpen(true);
                   triggerSound('beep');
                 }}
-                className="py-2.5 px-1.5 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors cursor-pointer"
+                className="min-h-[44px] py-2 px-1 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors cursor-pointer"
                 title="Chat with Captain"
               >
-                <MessageSquare className="w-4 h-4 text-blue-600" />
-                <span>Chat</span>
+                <MessageSquare className="w-4 h-4 text-blue-600 shrink-0" />
+                <span className="truncate">Chat</span>
               </button>
 
               <button
@@ -1105,11 +1265,11 @@ export const UserDashboard: React.FC = () => {
                   setIsShareTripOpen(true);
                   triggerSound('beep');
                 }}
-                className="py-2.5 px-1.5 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors cursor-pointer"
+                className="min-h-[44px] py-2 px-1 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors cursor-pointer"
                 title="Share Live Trip"
               >
-                <Share2 className="w-4 h-4 text-[#FF6B2C]" />
-                <span>Share</span>
+                <Share2 className="w-4 h-4 text-[#FF6B2C] shrink-0" />
+                <span className="truncate">Share</span>
               </button>
 
               <button
@@ -1118,11 +1278,11 @@ export const UserDashboard: React.FC = () => {
                   setIsSosOpen(true);
                   triggerSound('alert');
                 }}
-                className="py-2.5 px-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-red-200 transition-colors cursor-pointer animate-pulse"
+                className="min-h-[44px] py-2 px-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-red-200 transition-colors cursor-pointer animate-pulse"
                 title="Emergency SOS"
               >
-                <AlertTriangle className="w-4 h-4 text-red-600" />
-                <span>SOS</span>
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                <span className="truncate">SOS</span>
               </button>
             </div>
 
@@ -1134,17 +1294,17 @@ export const UserDashboard: React.FC = () => {
                   setIsSafetyOpen(true);
                   triggerSound('beep');
                 }}
-                className="flex-1 py-2 px-3 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-neutral-700 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-neutral-200 transition-colors cursor-pointer"
+                className="flex-1 min-h-[42px] py-2 px-3 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-neutral-700 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-neutral-200 transition-colors cursor-pointer"
               >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Safety Center</span>
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="truncate">Safety Center</span>
               </button>
 
               {activeRide.status !== 'in_progress' && (
                 <button
                   type="button"
                   onClick={() => cancelRide('Passenger requested cancellation')}
-                  className="py-2 px-3 bg-[#FEE2E2] hover:bg-[#FECACA] text-[#DC2626] font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+                  className="min-h-[42px] py-2 px-3 bg-[#FEE2E2] hover:bg-[#FECACA] text-[#DC2626] font-semibold text-xs rounded-xl transition-colors cursor-pointer"
                 >
                   Cancel Ride
                 </button>
@@ -1206,6 +1366,8 @@ export const UserDashboard: React.FC = () => {
           </button>
         </div>
       )}
+        </>
+      )}
 
       {/* MODALS SUITE */}
 
@@ -1239,67 +1401,6 @@ export const UserDashboard: React.FC = () => {
         onSelectPlace={(point) => {
           setDropoff(point);
           triggerSound('success');
-        }}
-      />
-
-      {/* 4. Ride History Modal */}
-      <RideHistoryModal
-        isOpen={isHistoryOpen}
-        onClose={() => {
-          setIsHistoryOpen(false);
-          window.dispatchEvent(new CustomEvent('navigateHomeTab'));
-        }}
-        activeRide={activeRide}
-        completedTrips={completedTrips}
-        onBookAgain={(pName, dName) => {
-          const matchedPickup = POPULAR_LOCATIONS.find((l) => l.name === pName) || {
-            name: pName,
-            address: pName,
-            lat: 22.5804,
-            lng: 88.4378
-          };
-          const matchedDropoff = POPULAR_LOCATIONS.find((l) => l.name === dName) || {
-            name: dName,
-            address: dName,
-            lat: 22.5867,
-            lng: 88.4178
-          };
-          setPickup(matchedPickup);
-          setDropoff(matchedDropoff);
-          setIsHistoryOpen(false);
-          triggerSound('beep');
-        }}
-        onOpenReceipt={(trip) => {
-          const rideItem: ActiveRide = {
-            id: trip.rideId || trip.id,
-            userId: user?.id || 'usr_passenger',
-            userName: user?.name || trip.passengerName || 'Passenger',
-            userPhone: user?.phone || '+91 98311 02458',
-            userRating: 4.9,
-            pickup: { name: trip.pickupName, lat: 22.5804, lng: 88.4378, address: trip.pickupName },
-            dropoff: { name: trip.dropoffName, lat: 22.5867, lng: 88.4178, address: trip.dropoffName },
-            vehicleType: 'toto',
-            totalFare: trip.fare,
-            basePrice: 20,
-            discount: 0,
-            driverEarnings: Math.round(trip.fare * 0.85),
-            distanceKm: trip.distanceKm,
-            estimatedMins: Math.round(trip.distanceKm * 4),
-            paymentMethod: trip.paymentMethod || 'cash',
-            paymentStatus: 'paid',
-            status: 'completed',
-            otp: '8492',
-            driverName: 'Subhashish Mondal',
-            vehicleNumber: 'WB-06-ER-4821',
-            driverPhone: '+91 98745 22019',
-            bookedAt: trip.completedAt || new Date().toISOString()
-          };
-          setReceiptRideData(rideItem);
-          setIsReceiptOpen(true);
-        }}
-        onReportIssue={(tripId) => {
-          setSupportRideId(tripId);
-          setIsSupportOpen(true);
         }}
       />
 
@@ -1398,7 +1499,7 @@ export const UserDashboard: React.FC = () => {
         totalFare={currentFare}
         distanceKm={Number(estimatedDistanceKm.toFixed(1))}
         durationMins={Math.round(estimatedDistanceKm * 4)}
-        vehicleName="Toto Electric"
+        vehicleName={selectedTier.name}
         appliedCouponCode={appliedCoupon?.code}
       />
 
@@ -1414,29 +1515,6 @@ export const UserDashboard: React.FC = () => {
         }}
         onRemoveCoupon={() => {
           setAppliedCoupon(null);
-          triggerSound('beep');
-        }}
-      />
-
-      {/* 14. Account & Profile Settings Modal */}
-      <ProfileSettingsModal
-        isOpen={isProfileSettingsOpen}
-        onClose={() => {
-          setIsProfileSettingsOpen(false);
-          window.dispatchEvent(new CustomEvent('navigateHomeTab'));
-        }}
-        user={user}
-        walletBalance={walletBalance}
-        completedRidesCount={completedTrips.length}
-        onOpenWallet={() => setIsWalletOpen(true)}
-        onOpenSchedule={() => setIsScheduleOpen(true)}
-        onOpenSavedPlaces={() => setIsSavedPlacesOpen(true)}
-        onOpenHistory={() => setIsHistoryOpen(true)}
-        onOpenSafety={() => setIsSafetyOpen(true)}
-        onOpenSupport={() => setIsSupportOpen(true)}
-        onOpenCoupons={() => setIsCouponsOpen(true)}
-        onLogout={() => {
-          logoutUser();
           triggerSound('beep');
         }}
       />

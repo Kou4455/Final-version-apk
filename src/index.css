@@ -2,6 +2,13 @@
 @import "leaflet/dist/leaflet.css";
 
 @layer base {
+  html, body {
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+
   body {
     font-family: 'Plus Jakarta Sans', sans-serif;
     background-color: #F8F8F6;
@@ -67,5 +74,15 @@
 
 .editorial-border-2 {
   border: 2px solid #000000;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }
 

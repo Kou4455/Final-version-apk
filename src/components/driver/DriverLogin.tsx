@@ -21,8 +21,10 @@ import {
   Plus,
   Trash2,
   Check,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Loader2
 } from 'lucide-react';
+import { compressImage, formatFileSize, estimateBase64Size } from '../../utils/imageCompressor';
 
 interface DriverLoginProps {
   onLoginSuccess?: () => void;
@@ -45,7 +47,8 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
     pendingApprovalsCount,
     triggerSound, 
     setActiveRole, 
-    logoutUser 
+    logoutUser,
+    logoutDriver 
   } = useRide();
 
   // Login form state
@@ -64,6 +67,8 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
   const [regVehicleColor, setRegVehicleColor] = useState('Emerald Green');
   const [driverPhoto, setDriverPhoto] = useState<string>('');
   const [totoPhotos, setTotoPhotos] = useState<string[]>([]);
+  const [compressingDriverPhoto, setCompressingDriverPhoto] = useState(false);
+  const [compressingTotoPhotos, setCompressingTotoPhotos] = useState(false);
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -71,34 +76,67 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
   const [pendingApprovalNotice, setPendingApprovalNotice] = useState<string | null>(null);
   const [registrationSubmitted, setRegistrationSubmitted] = useState(false);
 
-  // Handle Driver Photo File Upload
-  const handleDriverPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Driver Photo File Upload with Auto Compression
+  const handleDriverPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setDriverPhoto(event.target.result as string);
-        triggerSound('success');
-      }
-    };
-    reader.readAsDataURL(file);
+    setCompressingDriverPhoto(true);
+    setErrorMsg('');
+    try {
+      // Compress to max 500x500 at 0.65 quality (produces ~25KB-45KB)
+      const compressed = await compressImage(file, {
+        maxWidth: 500,
+        maxHeight: 500,
+        quality: 0.65,
+        maxBytes: 60 * 1024
+      });
+      setDriverPhoto(compressed);
+      triggerSound('success');
+    } catch (err) {
+      console.error('Driver photo compression error:', err);
+      setErrorMsg('Failed to process driver photo. Please choose another image.');
+    } finally {
+      setCompressingDriverPhoto(false);
+      e.target.value = '';
+    }
   };
 
-  // Handle Toto Photos File Upload (Multiple)
-  const handleTotoPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Toto Photos File Upload with Auto Compression (Max 3 photos)
+  const handleTotoPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setTotoPhotos((prev) => [...prev, event.target!.result as string]);
-          triggerSound('beep');
-        }
-      };
-      reader.readAsDataURL(file);
+    setCompressingTotoPhotos(true);
+    setErrorMsg('');
+    try {
+      const remainingSlots = Math.max(0, 3 - totoPhotos.length);
+      if (remainingSlots <= 0) {
+        setErrorMsg('Maximum 3 Toto photos allowed.');
+        return;
+      }
+      const filesToProcess: File[] = [];
+      for (let i = 0; i < Math.min(files.length, remainingSlots); i++) {
+        const item = files.item(i);
+        if (item) filesToProcess.push(item);
+      }
+      const compressedList = await Promise.all(
+        filesToProcess.map((file) =>
+          compressImage(file, {
+            maxWidth: 600,
+            maxHeight: 500,
+            quality: 0.65,
+            maxBytes: 60 * 1024
+          })
+        )
+      );
+
+      setTotoPhotos((prev) => [...prev, ...compressedList].slice(0, 3));
+      triggerSound('beep');
+    } catch (err) {
+      console.error('Toto photos compression error:', err);
+      setErrorMsg('Failed to process toto photos. Please try again.');
+    } finally {
+      setCompressingTotoPhotos(false);
+      e.target.value = '';
     }
   };
 
@@ -203,7 +241,7 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
   return (
     <div 
       id="driver-login-screen" 
-      className="w-full flex-1 sm:flex-initial sm:max-w-md md:max-w-lg mx-auto bg-[#FAF8F5] sm:rounded-3xl border-0 sm:border border-[#EDE8E0] shadow-none sm:shadow-sm p-5 sm:p-7 text-[#111111] font-sans select-none animate-in fade-in duration-200 flex flex-col justify-between min-h-[calc(100vh-65px)] sm:min-h-0 overflow-y-auto overscroll-contain"
+      className="w-full flex-1 sm:flex-initial sm:max-w-md md:max-w-lg mx-auto bg-[#FAF8F5] sm:rounded-3xl border-0 sm:border border-[#EDE8E0] shadow-none sm:shadow-sm p-5 sm:p-7 text-[#111111] font-sans animate-in fade-in duration-200 flex flex-col justify-between min-h-[calc(100vh-65px)] sm:min-h-0 touch-pan-y"
     >
       <div className="space-y-5">
         {/* Top Back & Admin Link */}
@@ -212,7 +250,7 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
             type="button"
             onClick={() => {
               triggerSound('beep');
-              logoutUser();
+              logoutDriver();
               setActiveRole('user');
               if (onBack) onBack();
             }}
@@ -477,11 +515,15 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
                     Driver Photo (Selfie / ID Portrait)
                   </label>
                 </div>
-                {driverPhoto && (
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-0.5">
-                    <Check className="w-3 h-3" /> Selected
+                {compressingDriverPhoto ? (
+                  <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Compressing...
                   </span>
-                )}
+                ) : driverPhoto ? (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-0.5">
+                    <Check className="w-3 h-3" /> Ready ({formatFileSize(estimateBase64Size(driverPhoto))})
+                  </span>
+                ) : null}
               </div>
 
               <div className="flex items-center gap-3">
@@ -495,7 +537,11 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
                     />
                   ) : (
                     <div className="w-14 h-14 rounded-2xl bg-neutral-100 border border-dashed border-neutral-300 flex items-center justify-center text-neutral-400">
-                      <User className="w-6 h-6" />
+                      {compressingDriverPhoto ? (
+                        <Loader2 className="w-5 h-5 animate-spin text-[#C8622A]" />
+                      ) : (
+                        <User className="w-6 h-6" />
+                      )}
                     </div>
                   )}
                   {driverPhoto && (
@@ -512,18 +558,21 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
 
                 <div className="flex-1 space-y-1.5">
                   {/* File upload input */}
-                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#EDE8E0] hover:bg-[#E2DDD3] text-[#111111] text-[11px] font-bold cursor-pointer transition-all active:scale-95 shadow-2xs">
+                  <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#EDE8E0] hover:bg-[#E2DDD3] text-[#111111] text-[11px] font-bold cursor-pointer transition-all active:scale-95 shadow-2xs ${
+                    compressingDriverPhoto ? 'opacity-60 pointer-events-none' : ''
+                  }`}>
                     <Upload className="w-3.5 h-3.5 text-[#C8622A]" />
-                    <span>Upload From Device / Camera</span>
+                    <span>{driverPhoto ? 'Change Photo' : 'Upload From Device / Camera'}</span>
                     <input
                       type="file"
                       accept="image/*"
+                      disabled={compressingDriverPhoto}
                       onChange={handleDriverPhotoUpload}
                       className="hidden"
                     />
                   </label>
                   <p className="text-[10px] text-neutral-500">
-                    Clear passport photo or selfie for passenger trust & safety.
+                    Auto-optimized to lightweight HD JPEG for instant cloud sync.
                   </p>
                 </div>
               </div>
@@ -535,12 +584,18 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
                 <div className="flex items-center gap-1.5">
                   <ImageIcon className="w-3.5 h-3.5 text-[#C8622A]" />
                   <label className="block text-[11px] font-bold text-[#111111]">
-                    Toto Vehicle Photos
+                    Toto Vehicle Photos (Max 3)
                   </label>
                 </div>
-                <span className="text-[10px] font-bold text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-lg">
-                  {totoPhotos.length} Photo{totoPhotos.length !== 1 ? 's' : ''}
-                </span>
+                {compressingTotoPhotos ? (
+                  <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Optimizing...
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-lg">
+                    {totoPhotos.length}/3 Photos
+                  </span>
+                )}
               </div>
 
               {/* Gallery of Uploaded Toto Photos */}
@@ -567,28 +622,51 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
                     </div>
                   ))}
 
-                  {/* Add more button */}
-                  <label className="w-16 h-14 rounded-xl border-2 border-dashed border-neutral-300 hover:border-[#C8622A] bg-neutral-50 flex flex-col items-center justify-center text-neutral-500 cursor-pointer shrink-0 transition-colors">
-                    <Plus className="w-4 h-4 text-[#C8622A]" />
-                    <span className="text-[9px] font-bold mt-0.5">Add</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handleTotoPhotoUpload}
-                      className="hidden"
-                    />
-                  </label>
+                  {/* Add more button if under limit */}
+                  {totoPhotos.length < 3 && (
+                    <label className={`w-16 h-14 rounded-xl border-2 border-dashed border-neutral-300 hover:border-[#C8622A] bg-neutral-50 flex flex-col items-center justify-center text-neutral-500 cursor-pointer shrink-0 transition-colors ${
+                      compressingTotoPhotos ? 'opacity-60 pointer-events-none' : ''
+                    }`}>
+                      {compressingTotoPhotos ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-[#C8622A]" />
+                      ) : (
+                        <>
+                          <Plus className="w-4 h-4 text-[#C8622A]" />
+                          <span className="text-[9px] font-bold mt-0.5">Add</span>
+                        </>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        disabled={compressingTotoPhotos}
+                        onChange={handleTotoPhotoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
                 </div>
               ) : (
-                <label className="w-full py-4 px-3 rounded-2xl border-2 border-dashed border-neutral-300 hover:border-[#C8622A] bg-neutral-50/70 flex flex-col items-center justify-center text-neutral-600 cursor-pointer transition-colors">
-                  <Upload className="w-5 h-5 text-[#C8622A] mb-1" />
-                  <span className="text-xs font-bold text-neutral-800">Upload Toto Photos</span>
-                  <span className="text-[10px] text-neutral-400">Front view, side profile & number plate</span>
+                <label className={`w-full py-4 px-3 rounded-2xl border-2 border-dashed border-neutral-300 hover:border-[#C8622A] bg-neutral-50/70 flex flex-col items-center justify-center text-neutral-600 cursor-pointer transition-colors ${
+                  compressingTotoPhotos ? 'opacity-60 pointer-events-none' : ''
+                }`}>
+                  {compressingTotoPhotos ? (
+                    <div className="flex items-center gap-2 text-xs font-semibold text-[#C8622A]">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Compressing & optimizing vehicle photos...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="w-5 h-5 text-[#C8622A] mb-1" />
+                      <span className="text-xs font-bold text-neutral-800">Upload Toto Photos</span>
+                      <span className="text-[10px] text-neutral-400">Front view, side profile & number plate (up to 3)</span>
+                    </>
+                  )}
                   <input
                     type="file"
                     accept="image/*"
                     multiple
+                    disabled={compressingTotoPhotos}
                     onChange={handleTotoPhotoUpload}
                     className="hidden"
                   />
