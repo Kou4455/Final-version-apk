@@ -293,25 +293,34 @@ export const ProfileSettingsPage: React.FC<ProfileSettingsPageProps> = ({
 
       {/* Confirmation Modal for Logout */}
       {showLogoutConfirm && (
-        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl space-y-4 border border-neutral-200 animate-in zoom-in-95 duration-150">
+        <div 
+          className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-3 sm:p-4 pb-6 sm:pb-4 animate-in fade-in duration-200"
+          onClick={() => setShowLogoutConfirm(false)}
+        >
+          <div 
+            className="bg-white w-full max-w-sm sm:max-w-md rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 border border-neutral-200 animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-150 mb-2 sm:mb-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Mobile Bottom Sheet Pull Indicator */}
+            <div className="w-10 h-1 rounded-full bg-neutral-200 mx-auto -mt-1 mb-2 sm:hidden" />
+
             <div className="flex flex-col items-center text-center space-y-3">
-              <div className="w-14 h-14 bg-red-50 text-red-600 rounded-full flex items-center justify-center">
-                <LogOut className="w-7 h-7 ml-0.5" />
+              <div className="w-13 h-13 sm:w-14 sm:h-14 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center border border-red-100 shadow-2xs">
+                <LogOut className="w-6 h-6 sm:w-7 sm:h-7 ml-0.5" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-lg font-black text-neutral-900">Log Out of TotoDrive?</h3>
-                <p className="text-xs font-medium text-neutral-500 px-2">
+                <h3 className="text-lg sm:text-xl font-black text-neutral-900 tracking-tight">Log Out of TotoDrive?</h3>
+                <p className="text-xs sm:text-sm font-medium text-neutral-500 max-w-xs mx-auto px-1 leading-relaxed">
                   You can log back in at any time with your verified phone number.
                 </p>
               </div>
             </div>
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2.5 sm:gap-3 pt-1.5">
               <button
                 type="button"
                 onClick={() => setShowLogoutConfirm(false)}
-                className="flex-1 py-3 px-4 rounded-2xl bg-neutral-100 hover:bg-neutral-200 font-bold text-xs sm:text-sm text-neutral-700 transition-colors cursor-pointer"
+                className="flex-1 py-3 sm:py-3.5 px-4 rounded-2xl bg-neutral-100 hover:bg-neutral-200 font-bold text-xs sm:text-sm text-neutral-700 transition-colors cursor-pointer text-center"
               >
                 Cancel
               </button>
@@ -321,9 +330,10 @@ export const ProfileSettingsPage: React.FC<ProfileSettingsPageProps> = ({
                   setShowLogoutConfirm(false);
                   onLogout();
                 }}
-                className="flex-1 py-3 px-4 rounded-2xl bg-red-600 hover:bg-red-700 font-bold text-xs sm:text-sm text-white transition-colors cursor-pointer shadow-xs shadow-red-200"
+                className="flex-1 py-3 sm:py-3.5 px-4 rounded-2xl bg-red-600 hover:bg-red-700 font-bold text-xs sm:text-sm text-white transition-colors cursor-pointer shadow-xs shadow-red-200 text-center flex items-center justify-center gap-1.5"
               >
-                Log Out
+                <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span>Log Out</span>
               </button>
             </div>
           </div>

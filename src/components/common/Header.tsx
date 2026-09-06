@@ -64,8 +64,8 @@ export const Header: React.FC = () => {
       id="app-fixed-header"
       className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-200 select-none ${
         isScrolled 
-          ? 'bg-white/95 backdrop-blur-md border-b border-[#E2DDD3] shadow-[0_4px_20px_rgba(0,0,0,0.06)] py-2' 
-          : 'bg-white/90 backdrop-blur-md border-b border-[#EDE8E0] py-2.5'
+          ? 'bg-white/95 border-b border-[#E2DDD3] shadow-[0_4px_20px_rgba(0,0,0,0.06)] py-2' 
+          : 'bg-white/95 border-b border-[#EDE8E0] py-2.5'
       }`}
     >
       {/* Dynamic Scroll Progress Bar along header bottom */}
@@ -187,28 +187,46 @@ export const Header: React.FC = () => {
               </button>
 
               {showPassengerLogoutConfirm && (
-                <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-                  <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-                    <div className="flex flex-col items-center text-center space-y-4">
-                      <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center">
-                        <LogOut className="w-7 h-7 text-red-600 ml-1" />
+                <div 
+                  id="passenger-logout-modal-backdrop"
+                  className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-3 sm:p-4 pb-6 sm:pb-4 select-none animate-in fade-in duration-200"
+                  onClick={() => setShowPassengerLogoutConfirm(false)}
+                >
+                  <div 
+                    id="passenger-logout-modal"
+                    className="bg-white w-full max-w-sm sm:max-w-md rounded-3xl p-5 sm:p-6 shadow-2xl border border-neutral-200/90 animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 mb-2 sm:mb-0 text-center space-y-4"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Mobile Bottom Sheet Pull Indicator */}
+                    <div className="w-10 h-1 rounded-full bg-neutral-200 mx-auto -mt-1 mb-2 sm:hidden" />
+
+                    <div className="flex flex-col items-center text-center space-y-3">
+                      <div className="w-13 h-13 sm:w-14 sm:h-14 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto border border-red-100 shadow-2xs">
+                        <LogOut className="w-6 h-6 sm:w-7 sm:h-7 text-red-600 ml-0.5" />
                       </div>
                       <div className="space-y-1">
-                        <h3 className="text-xl sm:text-lg font-black text-neutral-900 tracking-tight">Log Out of TotoDrive?</h3>
-                        <p className="text-sm font-medium text-neutral-500 px-2 sm:px-0">You will need to verify your phone number to log back in.</p>
+                        <h3 className="text-lg sm:text-xl font-black text-neutral-900 tracking-tight">
+                          Log Out of TotoDrive?
+                        </h3>
+                        <p className="text-xs sm:text-sm font-medium text-neutral-500 max-w-xs mx-auto px-1 leading-relaxed">
+                          You will need to verify your phone number to log back in.
+                        </p>
                       </div>
-                      <div className="flex flex-col sm:flex-row gap-3 w-full pt-2">
+                      <div className="flex gap-2.5 sm:gap-3 w-full pt-1.5">
                         <button
+                          type="button"
                           onClick={() => { setShowPassengerLogoutConfirm(false); triggerSound('beep'); }}
-                          className="w-full sm:flex-1 py-3.5 sm:py-3 px-4 rounded-2xl bg-neutral-100 hover:bg-neutral-200 active:scale-95 text-neutral-700 font-bold text-sm transition-all cursor-pointer order-2 sm:order-1"
+                          className="flex-1 py-3 sm:py-3.5 px-4 rounded-2xl bg-neutral-100 hover:bg-neutral-200 active:scale-95 text-neutral-700 font-bold text-xs sm:text-sm transition-all cursor-pointer text-center"
                         >
                           Cancel
                         </button>
                         <button
+                          type="button"
                           onClick={() => { setShowPassengerLogoutConfirm(false); logoutUser(); triggerSound('beep'); }}
-                          className="w-full sm:flex-1 py-3.5 sm:py-3 px-4 rounded-2xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-sm transition-all cursor-pointer shadow-sm shadow-red-200 order-1 sm:order-2"
+                          className="flex-1 py-3 sm:py-3.5 px-4 rounded-2xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs sm:text-sm transition-all cursor-pointer shadow-xs shadow-red-200 text-center flex items-center justify-center gap-1.5"
                         >
-                          Yes, Log Out
+                          <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                          <span>Log Out</span>
                         </button>
                       </div>
                     </div>
@@ -276,14 +294,16 @@ export const Header: React.FC = () => {
               {showDriverLogoutConfirm && (
                 <div 
                   id="driver-logout-modal-backdrop"
-                  className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+                  className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-3 sm:p-4 pb-6 sm:pb-4 animate-in fade-in duration-200"
                   onClick={() => setShowDriverLogoutConfirm(false)}
                 >
                   <div 
                     id="driver-logout-modal"
-                    className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 border border-neutral-200 shadow-2xl text-left animate-in zoom-in-95 duration-150"
+                    className="bg-white rounded-3xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 space-y-4 border border-neutral-200 shadow-2xl text-left animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-150 mb-2 sm:mb-0"
                     onClick={(e) => e.stopPropagation()}
                   >
+                    {/* Mobile Bottom Sheet Pull Indicator */}
+                    <div className="w-10 h-1 rounded-full bg-neutral-200 mx-auto -mt-1 mb-2 sm:hidden" />
                     <div className="flex items-start gap-3 pb-3 border-b border-neutral-100">
                       <div className="p-2.5 bg-red-50 text-red-600 rounded-2xl border border-red-200/80 shrink-0">
                         <LogOut className="w-5 h-5" />
