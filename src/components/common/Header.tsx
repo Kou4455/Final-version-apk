@@ -4,11 +4,13 @@ import { SEED_DRIVERS } from '../../data/appData';
 import { AppLogo } from './AppLogo';
 import { 
   LogOut,
-  User
+  User,
+  AlertTriangle
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const [showPassengerLogoutConfirm, setShowPassengerLogoutConfirm] = useState(false);
+  const [showDriverLogoutConfirm, setShowDriverLogoutConfirm] = useState(false);
 
   const { 
     activeRole, 
@@ -73,19 +75,7 @@ export const Header: React.FC = () => {
             </button>
           )}
 
-          {/* Passenger Button - automatically hidden when captains are on driver PIN sign-in page or driver dashboard */}
-          {activeRole === 'admin' && (
-            <button
-              id="header-passenger-btn"
-              type="button"
-              onClick={() => { setActiveRole('user'); triggerSound('beep'); }}
-              className="px-3.5 py-1.5 rounded-xl transition-all duration-75 cursor-pointer flex items-center gap-2 bg-[#FAF8F5] hover:bg-neutral-100 border border-neutral-200 text-neutral-800 text-xs font-bold shadow-2xs active:scale-95"
-              title="Return to Passenger App"
-            >
-              <User className="w-3.5 h-3.5 text-[#E07A00]" />
-              <span>Passenger View</span>
-            </button>
-          )}
+          {/* Passenger Button - removed from admin pages as requested */}
 
           {/* User Profile Info & Signout when passenger is logged in */}
           {activeRole === 'user' && user && (
@@ -172,12 +162,112 @@ export const Header: React.FC = () => {
 
               <button
                 id="header-driver-signout-btn"
-                onClick={() => { logoutDriver(); triggerSound('beep'); }}
+                onClick={() => {
+                  triggerSound('beep');
+                  setShowDriverLogoutConfirm(true);
+                }}
                 title="Sign out captain"
                 className="p-2 rounded-xl hover:bg-neutral-100 text-neutral-400 hover:text-red-600 transition-colors cursor-pointer border border-transparent hover:border-neutral-200"
               >
                 <LogOut className="w-4 h-4" />
               </button>
+
+              {/* Driver Logout Confirmation Modal */}
+              {showDriverLogoutConfirm && (
+                <div 
+                  id="driver-logout-modal-backdrop"
+                  className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+                  onClick={() => setShowDriverLogoutConfirm(false)}
+                >
+                  <div 
+                    id="driver-logout-modal"
+                    className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 border border-neutral-200 shadow-2xl text-left animate-in zoom-in-95 duration-150"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-start gap-3 pb-3 border-b border-neutral-100">
+                      <div className="p-2.5 bg-red-50 text-red-600 rounded-2xl border border-red-200/80 shrink-0">
+                        <LogOut className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-0.5 flex-1">
+                        <h3 className="text-base font-extrabold text-neutral-900 leading-tight">
+                          Log Out of Captain Partner?
+                        </h3>
+                        <p className="text-xs text-neutral-500 font-medium">
+                          Captain Session Reconfirmation
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerSound('beep');
+                          setShowDriverLogoutConfirm(false);
+                        }}
+                        className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center text-xs font-bold transition-colors cursor-pointer"
+                        title="Cancel and close"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-amber-950 font-medium">
+                        <AlertTriangle className="w-4 h-4 text-[#C8622A] shrink-0 mt-0.5" />
+                        <div className="leading-relaxed">
+                          Are you sure you want to end your captain session? You will be set offline and cannot receive incoming passenger ride dispatch requests until you sign back in with your 4-digit PIN.
+                        </div>
+                      </div>
+
+                      {driver && (
+                        <div className="p-2.5 bg-[#FAF8F5] border border-neutral-200/80 rounded-xl flex items-center gap-2.5 text-xs">
+                          {driver.driverPhoto || driver.avatarUrl ? (
+                            <img
+                              src={driver.driverPhoto || driver.avatarUrl}
+                              alt={driver.name}
+                              className="w-8 h-8 rounded-full object-cover shadow-2xs shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-[#181818] text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                              {driver.name ? driver.name.charAt(0) : 'D'}
+                            </div>
+                          )}
+                          <div className="flex flex-col text-left leading-tight truncate">
+                            <span className="font-bold text-neutral-900 truncate">{driver.name}</span>
+                            <span className="text-[11px] text-neutral-500 truncate">{driver.phone} • {driver.vehicleModel || 'Toto'}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-neutral-100">
+                      <button
+                        id="driver-logout-cancel-btn"
+                        type="button"
+                        onClick={() => {
+                          triggerSound('beep');
+                          setShowDriverLogoutConfirm(false);
+                        }}
+                        className="flex-1 py-2.5 px-4 bg-neutral-100 hover:bg-neutral-200 active:scale-95 text-neutral-800 font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
+                      >
+                        Stay Online
+                      </button>
+
+                      <button
+                        id="driver-logout-confirm-btn"
+                        type="button"
+                        onClick={() => {
+                          triggerSound('beep');
+                          setShowDriverLogoutConfirm(false);
+                          logoutDriver();
+                        }}
+                        className="flex-1 py-2.5 px-4 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer text-center"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Yes, Log Out</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

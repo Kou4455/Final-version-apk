@@ -1,46 +1,60 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRide } from '../../context/RideContext';
-import { Home, Send, Palmtree, User } from 'lucide-react';
+import { Home, Car, User } from 'lucide-react';
 
 export const BottomNavigation: React.FC = () => {
-  const { activeRole, user, triggerSound } = useRide();
+  const { activeRole, user, driver, triggerSound } = useRide();
+  const [activeTab, setActiveTab] = useState('Home');
 
-  // Only show bottom navigation for the passenger app when logged in
-  if (activeRole !== 'user' || !user) {
-    return null;
-  }
+  useEffect(() => {
+    const handleNavigateHome = () => setActiveTab('Home');
+    window.addEventListener('navigateHomeTab', handleNavigateHome);
+    return () => window.removeEventListener('navigateHomeTab', handleNavigateHome);
+  }, []);
+
+  // Show bottom navigation for both passenger and driver apps when logged in
+  if (activeRole === 'admin') return null;
+  if (activeRole === 'user' && !user) return null;
+  if (activeRole === 'driver' && !driver) return null;
 
   const navItems = [
-    { icon: Home, label: 'Ride', active: true },
-    { icon: Send, label: 'All Services', active: false },
-    { icon: Palmtree, label: 'Travel', active: false },
-    { icon: User, label: 'Profile', active: false },
+    { icon: Home, label: 'Home' },
+    { icon: Car, label: 'My Ride' },
+    { icon: User, label: 'Profile' },
   ];
 
   return (
-    <nav className="sticky bottom-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-3 sm:px-6 py-2.5 select-none mt-auto">
-      <div className="max-w-6xl mx-auto flex items-center justify-between">
-        {navItems.map((item, index) => (
-          <button
-            key={index}
-            onClick={() => {
-              if (item.label === 'Profile') {
-                window.dispatchEvent(new CustomEvent('openProfileSettings'));
+    <nav className="sticky bottom-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-3 sm:px-6 py-2.5 select-none mt-auto shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)]">
+      <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
+        {navItems.map((item, index) => {
+          const isActive = activeTab === item.label;
+          return (
+            <button
+              key={index}
+              onClick={() => {
+                setActiveTab(item.label);
+                if (item.label === 'Profile') {
+                  window.dispatchEvent(new CustomEvent('openProfileSettings'));
+                } else if (item.label === 'My Ride') {
+                  window.dispatchEvent(new CustomEvent('openRideHistory'));
+                } else if (item.label === 'Home') {
+                  window.dispatchEvent(new CustomEvent('closeAllModals'));
+                }
                 triggerSound('click');
-              } else if (!item.active) {
-                triggerSound('click');
-              }
-            }}
-            className={`flex flex-col items-center justify-center w-full gap-1 py-1 ${
-              item.active ? 'text-[#111111]' : 'text-neutral-400 hover:text-neutral-700'
-            } transition-colors cursor-pointer`}
-          >
-            <item.icon className="w-6 h-6" strokeWidth={item.active ? 2.5 : 2} />
-            <span className={`text-[10px] ${item.active ? 'font-bold' : 'font-medium'}`}>
-              {item.label}
-            </span>
-          </button>
-        ))}
+              }}
+              className={`flex flex-1 items-center justify-center gap-1.5 sm:gap-2 px-3.5 py-2 sm:py-2 rounded-xl transition-all duration-150 cursor-pointer shadow-xs active:scale-[0.96] border ${
+                isActive
+                  ? 'bg-[#181818] hover:bg-black text-white border-neutral-800 hover:border-neutral-700'
+                  : 'bg-[#FAF8F5] hover:bg-neutral-100 text-neutral-800 border-neutral-200'
+              }`}
+            >
+              <item.icon className={`w-4 h-4 sm:w-4 h-4 ${isActive ? 'text-[#E07A00]' : 'text-neutral-500'}`} />
+              <span className="text-xs font-bold">
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </nav>
   );

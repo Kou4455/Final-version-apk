@@ -178,8 +178,20 @@ export const UserDashboard: React.FC = () => {
 
   useEffect(() => {
     const handleOpenProfile = () => setIsProfileSettingsOpen(true);
+    const handleOpenHistory = () => setIsHistoryOpen(true);
+    const handleCloseAll = () => {
+      setIsProfileSettingsOpen(false);
+      setIsHistoryOpen(false);
+      // add more if necessary, but these are the main bottom nav ones
+    };
     window.addEventListener('openProfileSettings', handleOpenProfile);
-    return () => window.removeEventListener('openProfileSettings', handleOpenProfile);
+    window.addEventListener('openRideHistory', handleOpenHistory);
+    window.addEventListener('closeAllModals', handleCloseAll);
+    return () => {
+      window.removeEventListener('openProfileSettings', handleOpenProfile);
+      window.removeEventListener('openRideHistory', handleOpenHistory);
+      window.removeEventListener('closeAllModals', handleCloseAll);
+    };
   }, []);
 
   // When location picker opens, autofocus input and reset query if desired
@@ -448,36 +460,89 @@ export const UserDashboard: React.FC = () => {
 
       {/* Route & Booking Card */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-3.5 sm:space-y-4">
-        {/* Pickup Location Row */}
+        {/* Unified Search Bar matching search bar.jpeg */}
         <div 
-          onClick={() => setShowLocationPicker('pickup')}
-          className="flex items-center gap-3.5 cursor-pointer group px-4 py-3.5 sm:py-4 rounded-2xl bg-[#FAF8F5] hover:bg-[#F3EFEA] border border-[#EAE4DB] hover:border-[#D5CDC2] transition-all min-h-[58px] sm:min-h-[62px] shadow-2xs"
+          id="unified-search-bar"
+          className="rounded-3xl bg-[#FAF9F7] sm:bg-[#F8F9FA] hover:bg-[#F4F3EF] border border-[#E2E8F0] p-4 sm:p-4.5 shadow-2xs transition-all flex items-center gap-3.5 sm:gap-4 group"
         >
-          <span className="w-3.5 h-3.5 rounded-full bg-[#FF7A1A] ring-4 ring-[#FF7A1A]/20 shrink-0 group-hover:scale-110 transition-transform" />
-          <div className="flex-1 flex items-center justify-between min-w-0">
-            <span className="text-base sm:text-lg font-semibold text-[#111111] truncate tracking-tight">
-              {pickup?.name || 'Sector V Metro Station (Gate 2)'}
-            </span>
-            <ChevronDown className="w-5 h-5 text-gray-400 group-hover:text-black transition-colors shrink-0 ml-2" />
+          {/* Left: Route Track Icons (Green halo dot, dashed line, terracotta dot) */}
+          <div className="flex flex-col items-center justify-between py-1 shrink-0 self-stretch select-none">
+            {/* Top: Pickup Green Concentric Indicator with soft halo */}
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#D1FAE5] flex items-center justify-center shrink-0 shadow-2xs">
+              <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-[#15803D] flex items-center justify-center">
+                <div className="w-1.5 h-1.5 rounded-full bg-white" />
+              </div>
+            </div>
+
+            {/* Vertical Dashed Line */}
+            <div className="w-[2px] flex-1 my-1.5 border-l-2 border-dashed border-[#475569] min-h-[22px] sm:min-h-[26px]" />
+
+            {/* Bottom: Drop Terracotta Concentric Indicator */}
+            <div className="w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full bg-[#9A3412] flex items-center justify-center shrink-0 shadow-2xs">
+              <div className="w-1.5 h-1.5 rounded-full bg-white" />
+            </div>
           </div>
-        </div>
 
-        {/* Vertical Separator Line */}
-        <div className="pl-6 -my-1.5 py-0.5 flex items-center">
-          <div className="w-[2px] h-4 bg-[#DCD6CC] rounded-full" />
-        </div>
+          {/* Right: Location Text Rows */}
+          <div className="flex-1 flex flex-col justify-between min-w-0">
+            {/* Pickup Location Row */}
+            <div 
+              id="search-pickup-location"
+              onClick={() => {
+                triggerSound('beep');
+                setShowLocationPicker('pickup');
+              }}
+              className="py-1 sm:py-1.5 flex items-center justify-between cursor-pointer min-h-[38px] select-none"
+              title="Click to set pickup location"
+            >
+              <div className="flex-1 min-w-0 pr-2">
+                <span className={`text-[15px] sm:text-base tracking-tight truncate block ${
+                  pickup?.name ? 'font-medium text-[#111111]' : 'text-[#475569]'
+                }`}>
+                  {pickup?.name || 'Pickup location'}
+                </span>
+              </div>
+              <ChevronDown className="w-4 h-4 text-slate-400 group-hover:text-slate-700 transition-colors shrink-0" />
+            </div>
 
-        {/* Drop-off Location Row */}
-        <div 
-          onClick={() => setShowLocationPicker('dropoff')}
-          className="flex items-center gap-3.5 cursor-pointer group px-4 py-3.5 sm:py-4 rounded-2xl bg-[#FAF8F5] hover:bg-[#F3EFEA] border border-[#EAE4DB] hover:border-[#D5CDC2] transition-all min-h-[58px] sm:min-h-[62px] shadow-2xs"
-        >
-          <span className="w-3.5 h-3.5 bg-[#111111] rounded-xs ring-4 ring-black/10 shrink-0 group-hover:scale-110 transition-transform" />
-          <div className="flex-1 flex items-center justify-between min-w-0">
-            <span className="text-base sm:text-lg font-semibold text-[#111111] truncate tracking-tight min-h-[26px] flex items-center">
-              {dropoff?.name || ''}
-            </span>
-            <ChevronDown className="w-5 h-5 text-gray-400 group-hover:text-black transition-colors shrink-0 ml-2" />
+            {/* Subtle Horizontal Divider Line */}
+            <div className="h-[1px] bg-[#E2E8F0] my-1 sm:my-1.5" />
+
+            {/* Drop Location Row */}
+            <div 
+              id="search-drop-location"
+              onClick={() => {
+                triggerSound('beep');
+                setShowLocationPicker('dropoff');
+              }}
+              className="py-1 sm:py-1.5 flex items-center justify-between cursor-pointer min-h-[38px] select-none"
+              title="Click to set destination drop location"
+            >
+              <div className="flex-1 min-w-0 pr-2">
+                <span className={`text-[15px] sm:text-base tracking-tight truncate block ${
+                  dropoff?.name ? 'font-medium text-[#111111]' : 'text-[#475569]'
+                }`}>
+                  {dropoff?.name || 'Drop location'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {dropoff && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDropoff(null);
+                      triggerSound('beep');
+                    }}
+                    className="w-5 h-5 rounded-full bg-neutral-200 hover:bg-neutral-300 text-neutral-600 flex items-center justify-center text-xs transition-colors cursor-pointer"
+                    title="Clear destination"
+                  >
+                    ✕
+                  </button>
+                )}
+                <ChevronDown className="w-4 h-4 text-slate-400 group-hover:text-slate-700 transition-colors" />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1180,7 +1245,10 @@ export const UserDashboard: React.FC = () => {
       {/* 4. Ride History Modal */}
       <RideHistoryModal
         isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
+        onClose={() => {
+          setIsHistoryOpen(false);
+          window.dispatchEvent(new CustomEvent('navigateHomeTab'));
+        }}
         activeRide={activeRide}
         completedTrips={completedTrips}
         onBookAgain={(pName, dName) => {
@@ -1353,7 +1421,10 @@ export const UserDashboard: React.FC = () => {
       {/* 14. Account & Profile Settings Modal */}
       <ProfileSettingsModal
         isOpen={isProfileSettingsOpen}
-        onClose={() => setIsProfileSettingsOpen(false)}
+        onClose={() => {
+          setIsProfileSettingsOpen(false);
+          window.dispatchEvent(new CustomEvent('navigateHomeTab'));
+        }}
         user={user}
         walletBalance={walletBalance}
         completedRidesCount={completedTrips.length}

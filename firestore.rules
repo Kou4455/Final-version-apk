@@ -94,7 +94,7 @@ service cloud.firestore {
       allow list: if true;
       allow create: if isValidId(driverId) && isValidDriverProfile(incoming());
       allow update: if isValidId(driverId) && isValidDriverProfile(incoming());
-      allow delete: if false;
+      allow delete: if isValidId(driverId);
     }
 
     // 3. Rides collection: Real-time trip matching & lifecycle

@@ -50,11 +50,13 @@ const MainAppContent: React.FC = () => {
 
         {/* Role 2: Toto Captain / Driver Partner View ("Your workday") */}
         {activeRole === 'driver' && (
-          <div className="w-full animate-in fade-in duration-300">
+          <div className="w-full flex-1 flex flex-col animate-in fade-in duration-300">
             {driver ? (
-              <DriverDashboard />
+              <div className="w-full flex-1 flex flex-col p-2 sm:p-0">
+                <DriverDashboard />
+              </div>
             ) : (
-              <div className="py-6 flex flex-col items-center">
+              <div className="w-full flex-1 flex flex-col items-center justify-center p-0 sm:py-6">
                 <DriverLogin
                   onBack={() => {
                     logoutUser();

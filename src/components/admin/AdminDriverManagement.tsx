@@ -18,20 +18,24 @@ import {
   Key,
   RotateCw,
   Copy,
-  CheckCheck
+  CheckCheck,
+  Trash2
 } from 'lucide-react';
+import { DeleteDriverModal } from './DeleteDriverModal';
 
 export const AdminDriverManagement: React.FC = () => {
   const { 
     driverApprovals, 
     approveDriverRegistration, 
     rejectDriverRegistration,
+    deleteDriverProfile,
     triggerSound 
   } = useRide();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'approved' | 'pending' | 'rejected' | 'suspended'>('all');
   const [selectedDriver, setSelectedDriver] = useState<DriverApprovalRequest | null>(null);
+  const [driverToDelete, setDriverToDelete] = useState<DriverApprovalRequest | null>(null);
   const [copiedPin, setCopiedPin] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
@@ -62,6 +66,19 @@ export const AdminDriverManagement: React.FC = () => {
       setActionNotice('Driver marked as rejected.');
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleConfirmDeleteDriver = async (driverTarget: DriverApprovalRequest, reason: string) => {
+    try {
+      await deleteDriverProfile(driverTarget.id);
+      if (selectedDriver?.id === driverTarget.id) {
+        setSelectedDriver(null);
+      }
+      setActionNotice(`Driver "${driverTarget.driverName}" (${driverTarget.vehicleNumber}) deleted. Reason: ${reason}`);
+    } catch (err) {
+      console.error(err);
+      setActionNotice(`Failed to delete driver: ${(err as Error).message}`);
     }
   };
 
@@ -201,10 +218,10 @@ export const AdminDriverManagement: React.FC = () => {
               <button
                 type="button"
                 onClick={() => { setSelectedDriver(driver); triggerSound('beep'); }}
-                className="flex-1 py-2 px-3 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs hover:border-[#C8622A] hover:text-[#C8622A] cursor-pointer"
               >
-                <Eye className="w-3.5 h-3.5" />
-                <span>Inspect KYC</span>
+                <Eye className="w-3.5 h-3.5 text-[#C8622A]" />
+                <span>Details Review</span>
               </button>
 
               {driver.status === 'pending' && (
@@ -239,6 +256,15 @@ export const AdminDriverManagement: React.FC = () => {
                   <span>Suspend</span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={() => { setDriverToDelete(driver); triggerSound('alert'); }}
+                className="py-2 px-2.5 rounded-xl bg-white hover:bg-rose-50 text-neutral-400 hover:text-rose-600 font-bold text-xs border border-neutral-300 hover:border-rose-300 transition-colors cursor-pointer shadow-2xs active:scale-95"
+                title="Permanently Delete Driver Profile"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+              </button>
             </div>
           </div>
         ))}
@@ -346,20 +372,87 @@ export const AdminDriverManagement: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Status Indicator & Approval Section */}
+              {selectedDriver.status === 'approved' ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-600 stroke-[3]" />
+                    <div>
+                      <div className="font-extrabold text-emerald-950 text-xs uppercase">Verification Status: Approved</div>
+                      <div className="text-[10px] text-emerald-700">Driver is active in Toto fleet with Security PIN: <strong className="font-mono">{selectedDriver.generatedPin || '1234'}</strong></div>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-md text-[10px] font-black uppercase">
+                    Approved
+                  </span>
+                </div>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-900">Review Complete?</span>
+                    <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-md text-[10px] font-bold uppercase">
+                      Pending Review
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-600">
+                    Verify all driver and Toto vehicle documentation above before finalizing.
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div className="pt-2 flex justify-end gap-2">
+            <div className="pt-3 border-t border-neutral-100 flex items-center justify-between gap-2 flex-wrap">
               <button
                 type="button"
-                onClick={() => setSelectedDriver(null)}
-                className="py-2.5 px-4 rounded-xl bg-neutral-900 hover:bg-black text-white font-bold text-xs cursor-pointer"
+                onClick={() => {
+                  const toDel = selectedDriver;
+                  setSelectedDriver(null);
+                  setDriverToDelete(toDel);
+                  triggerSound('alert');
+                }}
+                className="py-2.5 px-3.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-2xs"
+                title="Permanently Delete Driver Profile"
               >
-                Close Dossier
+                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                <span>Delete Profile</span>
               </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDriver(null)}
+                  className="py-2.5 px-4 rounded-xl border border-neutral-300 hover:bg-neutral-100 text-neutral-700 font-bold text-xs cursor-pointer"
+                >
+                  Close Dossier
+                </button>
+
+                {selectedDriver.status === 'pending' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleApprove(selectedDriver);
+                      setSelectedDriver(null);
+                    }}
+                    className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all"
+                  >
+                    <Key className="w-3.5 h-3.5 text-amber-200" />
+                    <span>Generate PIN & Finalize</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* DRIVER PROFILE DELETION WORKFLOW MODAL */}
+      <DeleteDriverModal
+        driver={driverToDelete}
+        isOpen={!!driverToDelete}
+        onClose={() => setDriverToDelete(null)}
+        onConfirmDelete={handleConfirmDeleteDriver}
+      />
     </div>
   );
 };

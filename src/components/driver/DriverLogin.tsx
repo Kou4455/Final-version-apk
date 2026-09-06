@@ -201,7 +201,10 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
   };
 
   return (
-    <div id="driver-login-screen" className="w-full max-w-md mx-auto bg-[#FAF8F5] min-h-[580px] max-h-[94vh] overflow-y-auto no-scrollbar flex flex-col justify-between p-5 sm:p-6 text-[#111111] font-sans select-none animate-in fade-in duration-200 rounded-3xl border border-[#EDE8E0] shadow-sm">
+    <div 
+      id="driver-login-screen" 
+      className="w-full flex-1 sm:flex-initial sm:max-w-md md:max-w-lg mx-auto bg-[#FAF8F5] sm:rounded-3xl border-0 sm:border border-[#EDE8E0] shadow-none sm:shadow-sm p-5 sm:p-7 text-[#111111] font-sans select-none animate-in fade-in duration-200 flex flex-col justify-between min-h-[calc(100vh-65px)] sm:min-h-0 overflow-y-auto overscroll-contain"
+    >
       <div className="space-y-5">
         {/* Top Back & Admin Link */}
         <div className="flex items-center justify-between">
@@ -642,22 +645,6 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
       {/* Footer Info */}
       <div className="pt-4 text-center text-[11px] text-neutral-500 font-medium space-y-1.5">
         <div>Secured with Firebase Firestore & 4-Digit PIN Authentication</div>
-        <div>
-          <button
-            id="driver-footer-admin-login-btn"
-            type="button"
-            onClick={() => {
-              triggerSound('beep');
-              setActiveRole('admin');
-            }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-neutral-100 text-neutral-800 hover:text-black font-bold text-xs transition-all cursor-pointer border border-neutral-200 shadow-2xs active:scale-95 group"
-            title="Open Admin Login Portal"
-          >
-            <Lock className="w-3.5 h-3.5 text-[#C8622A] group-hover:rotate-12 transition-transform" />
-            <span className="font-bold text-[#C8622A] group-hover:underline">Admin Login Portal</span>
-            <span className="text-neutral-400 group-hover:translate-x-0.5 transition-transform">→</span>
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -126,6 +126,7 @@ interface RideContextType {
   }) => Promise<{ approvalId: string; message: string }>;
   approveDriverRegistration: (approvalId: string, customPin?: string) => Promise<{ pin: string }>;
   rejectDriverRegistration: (approvalId: string) => Promise<void>;
+  deleteDriverProfile: (idOrPhone: string) => Promise<{ success: boolean; message: string }>;
   loginDriverWithPin: (phone: string, pin: string) => Promise<{ success: boolean; message?: string }>;
   updateDriverVehicleDetails: (details: {
     vehicleNumber?: string;
@@ -153,8 +154,10 @@ interface RideContextType {
 
   // Admin authentication state & methods
   isAdminAuthenticated: boolean;
+  adminCredentials: { username: string; passwordHash: string; updatedAt?: string };
   loginAdmin: (userId: string, password: string) => Promise<{ success: boolean; message: string }>;
   logoutAdmin: () => void;
+  updateAdminCredentials: (newUsername: string, newPassword: string, currentPassword?: string) => { success: boolean; message: string };
   updateAdminPassword: (newPassword: string) => { success: boolean; message: string };
 
   // Audio chime feedback
@@ -255,43 +258,60 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [driverApprovals, setDriverApprovals] = useState<DriverApprovalRequest[]>([]);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
 
-  // Admin authentication state (supports default admin / admin.admin or admin / admin, with ability to update password)
+  // Admin authentication state (supports default Username: "Admin", Password: "Admin", with ability to update credentials in future)
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     return localStorage.getItem('toto_admin_authenticated') === 'true';
   });
 
-  const [adminCredentials, setAdminCredentials] = useState<{ username: string; passwordHash: string }>(() => {
+  const [adminCredentials, setAdminCredentials] = useState<{ username: string; passwordHash: string; updatedAt?: string }>(() => {
     const saved = localStorage.getItem('toto_admin_credentials');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed.username === 'string' && typeof parsed.passwordHash === 'string') {
+          // If stored credentials were old legacy "admin.admin", migrate seamlessly to "Admin" / "Admin"
+          if (parsed.username.toLowerCase() === 'admin' && parsed.passwordHash === 'admin.admin') {
+            return { username: 'Admin', passwordHash: 'Admin', updatedAt: new Date().toISOString() };
+          }
+          return parsed;
+        }
       } catch (e) {
         console.error('Error parsing admin credentials:', e);
       }
     }
-    return { username: 'admin', passwordHash: 'admin.admin' };
+    return { username: 'Admin', passwordHash: 'Admin', updatedAt: new Date().toISOString() };
   });
 
   const loginAdmin = async (userIdInput: string, passwordInput: string): Promise<{ success: boolean; message: string }> => {
-    const cleanId = userIdInput.trim().toLowerCase();
+    const cleanId = userIdInput.trim();
     const cleanPass = passwordInput.trim();
 
-    // Support both 'admin' and 'admin.admin' as valid default passwords, plus any custom updated password
-    const isUserMatch = cleanId === adminCredentials.username.toLowerCase() || cleanId === 'admin';
+    if (!cleanId || !cleanPass) {
+      return { success: false, message: 'Please enter both Admin username and password.' };
+    }
+
+    // Default username is "Admin" (case-insensitive for convenience)
+    const storedUser = adminCredentials.username || 'Admin';
+    const isUserMatch = 
+      cleanId.toLowerCase() === storedUser.toLowerCase() || 
+      cleanId.toLowerCase() === 'admin';
+
+    // Default password is "Admin" (also gracefully matches 'admin' or custom updated password)
+    const storedPass = adminCredentials.passwordHash || 'Admin';
     const isPassMatch = 
-      cleanPass === adminCredentials.passwordHash || 
-      cleanPass === 'admin.admin' || 
-      cleanPass === 'admin';
+      cleanPass === storedPass || 
+      (storedPass === 'Admin' && cleanPass.toLowerCase() === 'admin') ||
+      cleanPass === 'admin.admin';
 
     if (isUserMatch && isPassMatch) {
       setIsAdminAuthenticated(true);
       localStorage.setItem('toto_admin_authenticated', 'true');
       playChime('success');
-      return { success: true, message: 'Admin authentication successful!' };
+      return { success: true, message: 'Admin authenticated successfully!' };
     }
 
     playChime('alert');
-    return { success: false, message: 'Invalid Admin credentials. Default is ID: admin, Password: admin.admin' };
+    return { success: false, message: 'Invalid Admin credentials. Default username is "Admin" and password is "Admin".' };
   };
 
   const logoutAdmin = () => {
@@ -301,15 +321,53 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     playChime('beep');
   };
 
-  const updateAdminPassword = (newPassword: string): { success: boolean; message: string } => {
-    if (!newPassword || newPassword.trim().length < 3) {
-      return { success: false, message: 'Password must be at least 3 characters long' };
+  const updateAdminCredentials = (
+    newUsername: string, 
+    newPassword: string, 
+    currentPassword?: string
+  ): { success: boolean; message: string } => {
+    const trimmedUser = newUsername.trim();
+    const trimmedPass = newPassword.trim();
+
+    if (!trimmedUser || trimmedUser.length < 3) {
+      return { success: false, message: 'Username must be at least 3 characters long.' };
     }
-    const updated = { ...adminCredentials, passwordHash: newPassword.trim() };
+    if (!trimmedPass || trimmedPass.length < 3) {
+      return { success: false, message: 'Password must be at least 3 characters long.' };
+    }
+
+    // If currentPassword is provided, verify it against existing stored password
+    if (currentPassword !== undefined && !isAdminAuthenticated) {
+      const cleanCurrent = currentPassword.trim();
+      const currentStored = adminCredentials.passwordHash || 'Admin';
+      const isMatch = 
+        cleanCurrent === currentStored || 
+        (currentStored === 'Admin' && cleanCurrent.toLowerCase() === 'admin') ||
+        cleanCurrent === 'admin.admin';
+      
+      if (!isMatch) {
+        playChime('alert');
+        return { success: false, message: 'Verification failed: Current password is incorrect.' };
+      }
+    }
+
+    const updated = {
+      username: trimmedUser,
+      passwordHash: trimmedPass,
+      updatedAt: new Date().toISOString()
+    };
+
     setAdminCredentials(updated);
     localStorage.setItem('toto_admin_credentials', JSON.stringify(updated));
     playChime('success');
-    return { success: true, message: 'Admin password updated successfully!' };
+    return { 
+      success: true, 
+      message: `Admin credentials updated successfully! New Username: "${trimmedUser}"` 
+    };
+  };
+
+  const updateAdminPassword = (newPassword: string): { success: boolean; message: string } => {
+    return updateAdminCredentials(adminCredentials.username || 'Admin', newPassword);
   };
 
   // Customer features state (wallet, saved places, safety, support, scheduling)
@@ -411,6 +469,12 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
             vehicleNumber: 'WB-24-ER-8841',
             vehicleModel: 'Mayuri Grand Li-ion E-Rickshaw',
             vehicleColor: 'Emerald Green',
+            driverPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+            totoPhotos: [
+              'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=600&auto=format&fit=crop&q=80',
+              'https://images.unsplash.com/photo-1558980664-769d59546b3d?w=600&auto=format&fit=crop&q=80',
+              'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&auto=format&fit=crop&q=80'
+            ],
             status: 'pending',
             createdAt: new Date(Date.now() - 3600000).toISOString()
           };
@@ -862,6 +926,83 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       triggerSound('beep');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `driver_approvals/${approvalId}`);
+      throw error;
+    }
+  };
+
+  // Admin permanently deletes driver profile (removes from approvals, fleet and local cache)
+  const deleteDriverProfile = async (idOrPhone: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      if (!auth.currentUser) {
+        await signInAnonymously(auth).catch(() => {});
+      }
+
+      const cleanDigits = idOrPhone.replace(/\D/g, '');
+      const targetApproval = driverApprovals.find(
+        (a) => a.id === idOrPhone || (cleanDigits && a.phone.replace(/\D/g, '').endsWith(cleanDigits))
+      );
+      const approvalDocId = targetApproval ? targetApproval.id : idOrPhone;
+
+      // 1. Delete from Firestore driver_approvals
+      try {
+        await deleteDoc(doc(db, 'driver_approvals', approvalDocId));
+      } catch (err) {
+        console.warn('Delete driver_approvals warning:', err);
+      }
+
+      // 2. Delete from Firestore drivers
+      const targetDriver = onlineDrivers.find(
+        (d) => d.id === idOrPhone || (cleanDigits && d.phone.replace(/\D/g, '').endsWith(cleanDigits))
+      );
+      const driverDocId = targetDriver ? targetDriver.id : (cleanDigits ? `driver_${cleanDigits}` : idOrPhone);
+
+      try {
+        await deleteDoc(doc(db, 'drivers', driverDocId));
+      } catch (err) {
+        console.warn('Delete drivers doc warning:', err);
+      }
+
+      // Also clean up by querying phone in drivers collection if valid 10 digits
+      if (cleanDigits && cleanDigits.length >= 10) {
+        try {
+          const snap = await getDocs(collection(db, 'drivers'));
+          snap.forEach(async (docSnap) => {
+            const data = docSnap.data() as DriverProfile;
+            const docPhoneDigits = (data.phone || '').replace(/\D/g, '');
+            if (docPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(docPhoneDigits)) {
+              await deleteDoc(doc(db, 'drivers', docSnap.id)).catch(() => {});
+            }
+          });
+        } catch (e) {
+          console.warn('Cleanup drivers query warning:', e);
+        }
+      }
+
+      // 3. Update local state immediately
+      setDriverApprovals((prev) =>
+        prev.filter(
+          (a) => a.id !== approvalDocId && (!cleanDigits || !a.phone.replace(/\D/g, '').endsWith(cleanDigits))
+        )
+      );
+      setOnlineDrivers((prev) =>
+        prev.filter(
+          (d) => d.id !== driverDocId && (!cleanDigits || !d.phone.replace(/\D/g, '').endsWith(cleanDigits))
+        )
+      );
+
+      // 4. Logout driver if the current active session matches deleted driver
+      if (
+        driver &&
+        (driver.id === driverDocId || (cleanDigits && driver.phone.replace(/\D/g, '').endsWith(cleanDigits)))
+      ) {
+        setDriver(null);
+        localStorage.removeItem('rapid_toto_driver');
+      }
+
+      triggerSound('alert');
+      return { success: true, message: 'Driver profile deleted successfully.' };
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `driver_approvals/${idOrPhone}`);
       throw error;
     }
   };
@@ -1730,6 +1871,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         registerDriverApproval,
         approveDriverRegistration,
         rejectDriverRegistration,
+        deleteDriverProfile,
         loginDriverWithPin,
         updateDriverVehicleDetails,
         dispatchRideRequest,
@@ -1748,8 +1890,10 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         completedTrips,
         rateRideWithTags,
         isAdminAuthenticated,
+        adminCredentials,
         loginAdmin,
         logoutAdmin,
+        updateAdminCredentials,
         updateAdminPassword,
         triggerSound,
         isFirestoreQuotaExceeded,

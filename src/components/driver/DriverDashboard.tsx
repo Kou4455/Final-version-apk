@@ -109,6 +109,28 @@ export const DriverDashboard: React.FC = () => {
   // Active target ride to show (either pending incoming or accepted active ride)
   const currentRide = pendingDriverRequest || (activeRide && activeRide.status !== 'completed' && activeRide.status !== 'cancelled' ? activeRide : null);
 
+  // Bottom Navigation listeners
+  useEffect(() => {
+    const handleOpenProfile = () => setShowSettingsModal(true);
+    const handleOpenHistory = () => setShowLedgerModal(true);
+    const handleCloseAll = () => {
+      setShowSettingsModal(false);
+      setShowLedgerModal(false);
+      setShowCashSettledModal(false);
+      setShowUpiQrModal(false);
+    };
+
+    window.addEventListener('openProfileSettings', handleOpenProfile);
+    window.addEventListener('openRideHistory', handleOpenHistory);
+    window.addEventListener('closeAllModals', handleCloseAll);
+
+    return () => {
+      window.removeEventListener('openProfileSettings', handleOpenProfile);
+      window.removeEventListener('openRideHistory', handleOpenHistory);
+      window.removeEventListener('closeAllModals', handleCloseAll);
+    };
+  }, []);
+
   // Set just accepted indicator
   useEffect(() => {
     if (activeRide && activeRide.status === 'driver_assigned') {
@@ -374,7 +396,7 @@ export const DriverDashboard: React.FC = () => {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto py-2 px-3 sm:px-0 font-sans select-none space-y-4">
+    <div className="w-full max-w-lg mx-auto py-2 px-3 sm:px-4 font-sans select-none space-y-4 flex-1">
       {/* -------------------------------------------------------------------------- */}
       {/* FEATURE 1: RIDE REQUEST NOTIFICATION BANNER (Top of DriverDashboard)        */}
       {/* -------------------------------------------------------------------------- */}
@@ -450,68 +472,7 @@ export const DriverDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* -------------------------------------------------------------------------- */}
-      {/* FEATURE 3: TOP-LEFT CORNER AVATAR / USERNAME CLICK OPENS SETTINGS PANEL    */}
-      {/* -------------------------------------------------------------------------- */}
-      <div className="flex items-center justify-between pt-1 pb-1">
-        <div 
-          id="driver-profile-header-trigger"
-          onClick={() => {
-            triggerSound('beep');
-            setShowSettingsModal(true);
-          }}
-          className="cursor-pointer group flex items-center gap-3 p-1.5 -ml-1.5 rounded-2xl hover:bg-black/5 transition-all"
-          title="Click to view & update Toto vehicle details"
-        >
-          {/* Top-Left Avatar with Driver Photo & Toto Badge */}
-          <div className="relative">
-            {driver?.avatarUrl || driver?.driverPhoto ? (
-              <img
-                src={driver.avatarUrl || driver.driverPhoto}
-                alt={driver.name}
-                className="w-11 h-11 rounded-full object-cover shadow-xs border-2 border-transparent group-hover:border-[#FF6B2C] transition-all"
-              />
-            ) : (
-              <div className="w-11 h-11 rounded-full bg-[#181818] text-white flex items-center justify-center font-bold text-base shadow-xs border-2 border-transparent group-hover:border-[#FF6B2C] transition-all">
-                {driver?.name ? driver.name.charAt(0).toUpperCase() : 'R'}
-              </div>
-            )}
-            <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white" />
-          </div>
 
-          {/* Top-Left Driver Name and Vehicle Plate */}
-          <div>
-            <div className="text-[10px] font-bold tracking-wider uppercase text-[#C8622A] flex items-center gap-1">
-              <span>TOTO CAPTAIN</span>
-              <span className="text-neutral-400 group-hover:text-[#FF6B2C] transition-colors">⚙️ Settings</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-[#111111] tracking-tight group-hover:text-[#FF6B2C] transition-colors">
-              {driver?.name || 'Your workday'}
-            </h1>
-            <div className="text-[11px] font-semibold text-neutral-500 flex items-center gap-1.5">
-              <span className="font-mono font-bold text-neutral-800">{driver?.vehicleNumber || 'WB-06-ER-4821'}</span>
-              <span>•</span>
-              <span className="truncate max-w-[120px]">{driver?.vehicleColor || 'Green'}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right side quick actions */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              triggerSound('beep');
-              setActiveRole('user');
-            }}
-            className="px-3 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-xs font-bold text-neutral-800 cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all"
-            title="Switch to Passenger App"
-          >
-            <User className="w-3.5 h-3.5 text-[#E07A00]" />
-            <span>Passenger View</span>
-          </button>
-        </div>
-      </div>
 
       {/* Real-Time Duty Availability Switch Card */}
       <div 
@@ -600,14 +561,7 @@ export const DriverDashboard: React.FC = () => {
             <span>TOTAL EARNINGS (FIRESTORE TRIPS)</span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowLedgerModal(true)}
-            className="text-[11px] font-bold text-[#FF6B2C] hover:underline flex items-center gap-1 cursor-pointer"
-          >
-            <History className="w-3.5 h-3.5" />
-            <span>View Ledger ({completedTrips.length})</span>
-          </button>
+
         </div>
 
         {/* Big Earnings Amount */}
@@ -623,60 +577,13 @@ export const DriverDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Quick simulation button to dynamically demonstrate Firestore updating */}
-          <button
-            id="simulate-completed-trip-btn"
-            type="button"
-            disabled={isSimulatingTrip}
-            onClick={handleSimulateCompletedTrip}
-            className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 active:scale-95 text-emerald-400 font-bold text-[11px] rounded-2xl flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 border border-neutral-700"
-            title="Inserts a completed trip into Firestore to test dynamic calculation"
-          >
-            {isSimulatingTrip ? (
-              <RotateCw className="w-3 h-3 animate-spin" />
-            ) : (
-              <Sparkles className="w-3 h-3 text-emerald-400" />
-            )}
-            <span>+ Add Trip</span>
-          </button>
+
         </div>
 
-        {/* Dynamic calculation footnote */}
-        <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between text-[10px] text-neutral-400 font-medium">
-          <span>Live Firestore Listener: <code className="text-emerald-400">/trips</code> collection</span>
-          <span className="text-emerald-400 font-bold">Dynamic Auto-Update</span>
-        </div>
+
       </div>
 
-      {/* Live Driver GPS Status Bar */}
-      <div className="bg-[#FAF8F5] border border-[#EAE4DB] rounded-2xl p-3 flex items-center justify-between gap-2 shadow-2xs">
-        <div className="flex items-center gap-2.5 overflow-hidden">
-          <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-            <Radio className="w-4 h-4 animate-pulse" />
-          </div>
-          <div className="overflow-hidden text-left">
-            <div className="text-[11px] font-bold text-[#111111] flex items-center gap-1.5">
-              <span>Driver GPS Beacon Active</span>
-              <span className="text-[9px] bg-emerald-100 text-emerald-800 font-mono px-1.5 py-0.2 rounded-full">
-                ±{gpsState.accuracy}m
-              </span>
-            </div>
-            <p className="text-[10px] text-gray-500 truncate">
-              {gpsState.address || `${gpsState.lat.toFixed(4)}, ${gpsState.lng.toFixed(4)}`}
-            </p>
-          </div>
-        </div>
 
-        <button
-          type="button"
-          onClick={refreshCurrentLocation}
-          className="px-2.5 py-1.5 bg-[#181818] hover:bg-black text-white text-[10px] font-bold rounded-xl shrink-0 flex items-center gap-1 shadow-2xs transition-transform active:scale-95 cursor-pointer"
-          title="Recalibrate GPS"
-        >
-          <LocateFixed className="w-3 h-3 text-[#FF6B2C]" />
-          <span>Calibrate</span>
-        </button>
-      </div>
 
       {/* Section Title & Quick Simulator */}
       <div className="flex items-center justify-between pt-1">
@@ -684,18 +591,7 @@ export const DriverDashboard: React.FC = () => {
           {currentRide ? 'Active Request' : 'Live Area Radar'}
         </h2>
         <div className="flex items-center gap-2">
-          {isOnline && !currentRide && (
-            <button
-              id="driver-simulate-request-btn"
-              type="button"
-              onClick={handleSimulateIncomingRequest}
-              className="text-[11px] font-bold text-[#FF6B2C] hover:underline flex items-center gap-1 cursor-pointer"
-              title="Dispatches a ride request into Firestore rideRequests collection"
-            >
-              <Bell className="w-3.5 h-3.5" />
-              <span>Simulate Request</span>
-            </button>
-          )}
+
 
           <button
             type="button"
@@ -933,15 +829,6 @@ export const DriverDashboard: React.FC = () => {
             <p className="text-xs text-gray-500 max-w-xs">
               Broadcasting your live Toto beacon to passengers in your sector. When a ride is requested, you'll get an alert banner right here!
             </p>
-
-            <button
-              type="button"
-              onClick={handleSimulateIncomingRequest}
-              className="mt-1 px-4 py-2 bg-[#FAF8F5] hover:bg-[#F2ECE1] text-[#C8622A] text-xs font-bold rounded-xl border border-[#EDE8E0] cursor-pointer flex items-center gap-1.5 transition-colors"
-            >
-              <Bell className="w-3.5 h-3.5" />
-              <span>Test Ride Request Banner</span>
-            </button>
           </div>
         </div>
       )}
@@ -970,13 +857,19 @@ export const DriverDashboard: React.FC = () => {
       {/* Settings Modal (Triggered by top-left avatar/username click) */}
       <DriverSettingsModal
         isOpen={showSettingsModal}
-        onClose={() => setShowSettingsModal(false)}
+        onClose={() => {
+          setShowSettingsModal(false);
+          window.dispatchEvent(new CustomEvent('navigateHomeTab'));
+        }}
       />
 
       {/* Trip History / Earnings Ledger Modal */}
       <TripLedgerModal
         isOpen={showLedgerModal}
-        onClose={() => setShowLedgerModal(false)}
+        onClose={() => {
+          setShowLedgerModal(false);
+          window.dispatchEvent(new CustomEvent('navigateHomeTab'));
+        }}
         trips={completedTrips}
         totalEarnings={firestoreTotalEarnings}
       />

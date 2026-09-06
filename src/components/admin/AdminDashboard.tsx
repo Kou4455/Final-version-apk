@@ -7,11 +7,13 @@ import { AdminCustomerManagement } from './AdminCustomerManagement';
 import { AdminRidesManagement } from './AdminRidesManagement';
 import { AdminReports } from './AdminReports';
 import { AdminNotifications } from './AdminNotifications';
+import { DeleteDriverModal } from './DeleteDriverModal';
 import { 
   ShieldCheck, 
   Clock, 
   Check, 
   X, 
+  Trash2,
   Copy, 
   CheckCheck, 
   Phone, 
@@ -38,7 +40,9 @@ import {
   Activity,
   Percent,
   LogOut,
-  Lock
+  Lock,
+  Eye,
+  AlertTriangle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -60,6 +64,7 @@ export const AdminDashboard: React.FC = () => {
     pendingApprovalsCount, 
     approveDriverRegistration, 
     rejectDriverRegistration, 
+    deleteDriverProfile,
     registerDriverApproval,
     loginDriverWithPin,
     setActiveRole,
@@ -67,12 +72,15 @@ export const AdminDashboard: React.FC = () => {
     activeRide,
     triggerSound,
     logoutAdmin,
-    updateAdminPassword
+    updateAdminPassword,
+    updateAdminCredentials,
+    adminCredentials
   } = useRide();
 
   const [currentTab, setCurrentTab] = useState<AdminTab>('overview');
   const [activeApprovalSubTab, setActiveApprovalSubTab] = useState<'pending' | 'approved'>('pending');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newUsernameVal, setNewUsernameVal] = useState(adminCredentials?.username || 'Admin');
   const [newPasswordVal, setNewPasswordVal] = useState('');
   const [confirmPasswordVal, setConfirmPasswordVal] = useState('');
   const [passwordNotice, setPasswordNotice] = useState<{ success: boolean; msg: string } | null>(null);
@@ -86,6 +94,20 @@ export const AdminDashboard: React.FC = () => {
   const [isProcessingId, setIsProcessingId] = useState<string | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [showLogoutConfirmModal, setShowLogoutConfirmModal] = useState(false);
+  const [pendingLogoutTarget, setPendingLogoutTarget] = useState<'default' | 'driver'>('default');
+
+  // Details Review Modal State
+  const [selectedReviewDriver, setSelectedReviewDriver] = useState<DriverApprovalRequest | null>(null);
+  const [reviewChecklist, setReviewChecklist] = useState({
+    identityVerified: false,
+    plateVerified: false,
+    vehiclePhotosApproved: false
+  });
+  const [isReviewedApproved, setIsReviewedApproved] = useState(false);
+  const [reviewGeneratedPin, setReviewGeneratedPin] = useState<string | null>(null);
+  const [activePhotoModal, setActivePhotoModal] = useState<{ url: string; title: string } | null>(null);
+  const [driverToDelete, setDriverToDelete] = useState<DriverApprovalRequest | null>(null);
 
   // Pricing configuration state (Admin configurable pricing formula without developer edits)
   const [pricingConfig, setPricingConfig] = useState({
@@ -165,10 +187,113 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  // Driver Profile Delete Workflow Handlers
+  const handleOpenDeleteModal = (driver: DriverApprovalRequest) => {
+    triggerSound('alert');
+    setDriverToDelete(driver);
+  };
+
+  const handleConfirmDeleteDriver = async (driverTarget: DriverApprovalRequest, reason: string) => {
+    try {
+      await deleteDriverProfile(driverTarget.id);
+      if (selectedReviewDriver?.id === driverTarget.id) {
+        setSelectedReviewDriver(null);
+      }
+      setActionNotice(`Driver profile "${driverTarget.driverName}" (${driverTarget.vehicleNumber}) has been permanently deleted from fleet.`);
+      setAuditLogs((prev) => [
+        {
+          id: String(Date.now()),
+          action: 'Driver Profile Purged',
+          actor: 'Admin',
+          target: `${driverTarget.driverName} (${driverTarget.vehicleNumber}) - Reason: ${reason}`,
+          time: 'Just now'
+        },
+        ...prev
+      ]);
+    } catch (err) {
+      console.error('Delete driver failed:', err);
+      setActionNotice(`Failed to delete driver: ${(err as Error).message}`);
+    }
+  };
+
+  // Details Review Modal Handlers
+  const handleOpenReviewModal = (appr: DriverApprovalRequest) => {
+    setSelectedReviewDriver(appr);
+    const isAlreadyApproved = appr.status === 'approved';
+    setIsReviewedApproved(isAlreadyApproved);
+    setReviewGeneratedPin(appr.generatedPin || null);
+    setReviewChecklist({
+      identityVerified: isAlreadyApproved,
+      plateVerified: isAlreadyApproved,
+      vehiclePhotosApproved: isAlreadyApproved
+    });
+    setActivePhotoModal(null);
+    triggerSound('beep');
+  };
+
+  const handleToggleReviewCheck = (key: keyof typeof reviewChecklist) => {
+    triggerSound('beep');
+    setReviewChecklist(prev => {
+      const updated = { ...prev, [key]: !prev[key] };
+      if (updated.identityVerified && updated.plateVerified && updated.vehiclePhotosApproved) {
+        setIsReviewedApproved(true);
+      }
+      return updated;
+    });
+  };
+
+  const handleMarkAsApproved = () => {
+    triggerSound('success');
+    setReviewChecklist({
+      identityVerified: true,
+      plateVerified: true,
+      vehiclePhotosApproved: true
+    });
+    setIsReviewedApproved(true);
+  };
+
+  const handleFinalizeAndGeneratePin = async (appr: DriverApprovalRequest) => {
+    setIsProcessingId(appr.id);
+    triggerSound('beep');
+    try {
+      const res = await approveDriverRegistration(appr.id);
+      confetti({ particleCount: 60, spread: 70, origin: { y: 0.5 } });
+      setIsReviewedApproved(true);
+      setReviewGeneratedPin(res.pin);
+      setSelectedReviewDriver(prev => prev ? { ...prev, status: 'approved', generatedPin: res.pin } : null);
+      setActionNotice(`Driver "${appr.driverName}" verified & approved! 4-Digit Security PIN: ${res.pin}`);
+      setAuditLogs(prev => [
+        {
+          id: String(Date.now()),
+          action: 'Driver Verified & PIN Generated',
+          actor: 'Admin',
+          target: `${appr.driverName} (${appr.vehicleNumber}) - PIN: ${res.pin}`,
+          time: 'Just now'
+        },
+        ...prev
+      ]);
+    } catch (err) {
+      console.error('Approval PIN generation failed:', err);
+    } finally {
+      setIsProcessingId(null);
+    }
+  };
+
   // Simulate a new Toto Driver Registration to test pending queue
   const handleSimulateNewRegistration = async () => {
     setIsSimulating(true);
     triggerSound('beep');
+    const sampleAvatars = [
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=400&auto=format&fit=crop&q=80'
+    ];
+    const sampleTotoPhotos = [
+      'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1558980664-769d59546b3d?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&auto=format&fit=crop&q=80'
+    ];
     const randomNames = ['Tapas Das', 'Rajesh Halder', 'Bishal Saha', 'Swapan Roy', 'Manoj Mondal'];
     const randomModels = ['Mayuri Pro Li-ion E-Rickshaw', 'Saarthi Smart Electric', 'Kinetic Safar Smart', 'Terra Y4A Deluxe'];
     const randomColors = ['Emerald Green', 'Canary Yellow', 'Electric Blue', 'Saffron Orange'];
@@ -176,6 +301,7 @@ export const AdminDashboard: React.FC = () => {
     const chosenName = randomNames[Math.floor(Math.random() * randomNames.length)];
     const chosenModel = randomModels[Math.floor(Math.random() * randomModels.length)];
     const chosenColor = randomColors[Math.floor(Math.random() * randomColors.length)];
+    const chosenAvatar = sampleAvatars[Math.floor(Math.random() * sampleAvatars.length)];
     const phone = `+91 983${Math.floor(1000000 + Math.random() * 8999999)}`;
 
     try {
@@ -185,7 +311,9 @@ export const AdminDashboard: React.FC = () => {
         vehicleType: 'toto',
         vehicleNumber: `WB-19-T-${randNum}`,
         vehicleModel: chosenModel,
-        vehicleColor: chosenColor
+        vehicleColor: chosenColor,
+        driverPhoto: chosenAvatar,
+        totoPhotos: sampleTotoPhotos
       });
       setCurrentTab('overview');
       setActiveApprovalSubTab('pending');
@@ -236,10 +364,12 @@ export const AdminDashboard: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 pb-4">
         <div className="flex items-center gap-3">
           <button
+            id="admin-top-back-btn"
             type="button"
             onClick={() => {
               triggerSound('beep');
-              setActiveRole('driver');
+              setPendingLogoutTarget('driver');
+              setShowLogoutConfirmModal(true);
             }}
             className="w-10 h-10 rounded-2xl bg-white border border-neutral-200 hover:bg-neutral-50 active:scale-95 flex items-center justify-center text-neutral-800 shadow-2xs transition-all cursor-pointer"
             title="Return to Toto Partner view"
@@ -286,24 +416,28 @@ export const AdminDashboard: React.FC = () => {
           </button>
 
           <button
+            id="admin-dashboard-credentials-btn"
             type="button"
             onClick={() => {
               triggerSound('beep');
+              setNewUsernameVal(adminCredentials?.username || 'Admin');
               setShowPasswordModal(true);
               setPasswordNotice(null);
             }}
             className="px-3 py-2 rounded-2xl bg-white border border-neutral-200 hover:bg-neutral-50 active:scale-95 text-neutral-800 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-            title="Change Admin Password"
+            title="Update Admin Username & Password"
           >
             <Key className="w-3.5 h-3.5 text-[#C8622A]" />
-            <span>Password</span>
+            <span>Credentials ({adminCredentials?.username || 'Admin'})</span>
           </button>
 
           <button
+            id="admin-top-logout-btn"
             type="button"
             onClick={() => {
               triggerSound('beep');
-              logoutAdmin();
+              setPendingLogoutTarget('default');
+              setShowLogoutConfirmModal(true);
             }}
             className="px-3 py-2 rounded-2xl bg-red-50 border border-red-200 hover:bg-red-100 active:scale-95 text-red-700 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
             title="Log out from Admin Console"
@@ -489,41 +623,92 @@ export const AdminDashboard: React.FC = () => {
                 {pendingList.map((appr) => (
                   <div
                     key={appr.id}
-                    className="p-4 rounded-2xl border border-amber-200 bg-amber-50/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                    className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-amber-200/90 bg-gradient-to-r from-amber-50/80 via-amber-50/40 to-white hover:border-amber-300 hover:shadow-xs transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
                   >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-sm text-[#111111]">{appr.driverName}</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                          Pending Approval
-                        </span>
-                      </div>
-                      <div className="text-xs text-neutral-600 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                        <span>Phone: <strong className="text-neutral-800">{appr.phone}</strong></span>
-                        <span>Plate: <strong className="font-mono text-neutral-800">{appr.vehicleNumber}</strong></span>
-                        <span>Model: {appr.vehicleModel} ({appr.vehicleColor})</span>
+                    <div className="flex items-start sm:items-center gap-3.5">
+                      {appr.driverPhoto ? (
+                        <img
+                          src={appr.driverPhoto}
+                          alt={appr.driverName}
+                          className="w-12 h-12 rounded-2xl object-cover border-2 border-amber-300 shadow-2xs shrink-0 cursor-pointer hover:opacity-90"
+                          onClick={() => handleOpenReviewModal(appr)}
+                        />
+                      ) : (
+                        <div 
+                          onClick={() => handleOpenReviewModal(appr)}
+                          className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 text-amber-900 border border-amber-300 flex items-center justify-center font-extrabold text-sm shrink-0 cursor-pointer"
+                        >
+                          {appr.driverName.slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-extrabold text-base text-[#111111]">{appr.driverName}</span>
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
+                            Pending Review
+                          </span>
+                          {appr.totoPhotos && appr.totoPhotos.length > 0 && (
+                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                              📷 {appr.totoPhotos.length} Photos
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-neutral-600 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span className="flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-neutral-400" />
+                            <strong className="text-neutral-800">{appr.phone}</strong>
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Car className="w-3 h-3 text-neutral-400" />
+                            <strong className="font-mono text-neutral-900 bg-white px-1.5 py-0.5 rounded border border-neutral-200">{appr.vehicleNumber}</strong>
+                          </span>
+                          <span className="text-neutral-500">
+                            Model: <strong className="text-neutral-700 font-semibold">{appr.vehicleModel}</strong> ({appr.vehicleColor})
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto pt-2 md:pt-0 border-t md:border-t-0 border-amber-200/50">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenReviewModal(appr)}
+                        className="flex-1 md:flex-initial py-2.5 px-4 rounded-xl bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-300 font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:border-[#C8622A] hover:text-[#C8622A] transition-all cursor-pointer active:scale-95"
+                        title="Open Details Review Modal to inspect full KYC, driver photo, and Toto vehicle photos"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-[#C8622A]" />
+                        <span>Details Review</span>
+                      </button>
+
                       <button
                         type="button"
                         disabled={isProcessingId === appr.id}
                         onClick={() => handleApprove(appr)}
-                        className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                        className="flex-1 md:flex-initial py-2.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+                        title="Approve & Generate Security PIN directly"
                       >
                         {isProcessingId === appr.id ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                        <span>Approve & Generate PIN</span>
+                        <span>Approve & PIN</span>
                       </button>
 
                       <button
                         type="button"
                         disabled={isProcessingId === appr.id}
                         onClick={() => handleReject(appr.id)}
-                        className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-all cursor-pointer disabled:opacity-50"
+                        className="py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+                        title="Reject Registration"
                       >
                         <X className="w-3.5 h-3.5" />
-                        <span>Reject</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDeleteModal(appr)}
+                        className="py-2.5 px-3 rounded-xl bg-white hover:bg-rose-50 text-neutral-500 hover:text-rose-600 font-bold text-xs border border-neutral-300 hover:border-rose-300 transition-all cursor-pointer active:scale-95 flex items-center gap-1 shadow-2xs"
+                        title="Delete Driver Profile"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                        <span className="hidden sm:inline">Delete</span>
                       </button>
                     </div>
                   </div>
@@ -539,19 +724,56 @@ export const AdminDashboard: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {approvedList.map((appr) => (
-                  <div key={appr.id} className="p-3.5 rounded-2xl border border-neutral-200 bg-[#FAF8F5] space-y-2 text-xs">
+                  <div key={appr.id} className="p-4 rounded-2xl border border-neutral-200 bg-[#FAF8F5] space-y-2.5 text-xs">
                     <div className="flex items-center justify-between">
-                      <div className="font-bold text-sm text-neutral-900">{appr.driverName}</div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                      <div className="flex items-center gap-2">
+                        {appr.driverPhoto ? (
+                          <img
+                            src={appr.driverPhoto}
+                            alt={appr.driverName}
+                            className="w-8 h-8 rounded-xl object-cover border border-neutral-200"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-xs">
+                            {appr.driverName.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="font-bold text-sm text-neutral-900">{appr.driverName}</div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
                         Approved
                       </span>
                     </div>
-                    <div className="text-neutral-500 font-mono text-[11px]">{appr.vehicleNumber} • {appr.phone}</div>
-                    <div className="flex items-center justify-between pt-1 border-t border-neutral-200">
-                      <span className="font-semibold text-neutral-600">Login PIN:</span>
-                      <span className="font-mono font-black text-emerald-700 bg-white px-2 py-0.5 rounded border border-neutral-200">
-                        {appr.generatedPin || '1234'}
-                      </span>
+                    <div className="text-neutral-500 font-mono text-[11px] flex items-center justify-between">
+                      <span>{appr.vehicleNumber}</span>
+                      <span>{appr.phone}</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-neutral-200">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-neutral-600">Login PIN:</span>
+                        <span className="font-mono font-black text-emerald-700 bg-white px-2 py-0.5 rounded border border-neutral-200">
+                          {appr.generatedPin || '1234'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReviewModal(appr)}
+                          className="py-1 px-2.5 bg-white hover:bg-neutral-100 text-neutral-800 border border-neutral-300 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-all shadow-2xs"
+                        >
+                          <Eye className="w-3 h-3 text-[#C8622A]" />
+                          <span>Details Review</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDeleteModal(appr)}
+                          className="py-1 px-2 bg-white hover:bg-rose-50 text-neutral-500 hover:text-rose-600 border border-neutral-300 hover:border-rose-300 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-all shadow-2xs"
+                          title="Delete Captain Profile"
+                        >
+                          <Trash2 className="w-3 h-3 text-rose-500" />
+                          <span className="hidden sm:inline">Delete</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -842,6 +1064,508 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* DETAILS REVIEW MODAL */}
+      {selectedReviewDriver && (
+        <div 
+          id="details-review-modal-backdrop"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
+        >
+          <div 
+            id="details-review-modal-container"
+            className="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-7 shadow-2xl border border-neutral-200 space-y-5 max-h-[92vh] flex flex-col justify-between"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-neutral-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-[#C8622A]">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-[#111111] tracking-tight">
+                    Driver & Vehicle Details Review
+                  </h3>
+                  <p className="text-xs text-neutral-500">
+                    KYC credentials, identity photo, and Toto vehicle documentation
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {isReviewedApproved || selectedReviewDriver.status === 'approved' ? (
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-black uppercase tracking-wide border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                    Approved
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 text-xs font-bold uppercase tracking-wide border border-amber-200 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    Pending Review
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedReviewDriver(null)}
+                  className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold flex items-center justify-center cursor-pointer transition-colors"
+                  title="Close Modal"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="overflow-y-auto space-y-5 pr-1 text-xs no-scrollbar">
+              {/* SECTION 1: DRIVER PROFILE & IDENTITY PHOTO */}
+              <div className="p-4 bg-[#FAF8F5] rounded-2xl border border-neutral-200 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <div className="relative group shrink-0">
+                  <img
+                    src={
+                      selectedReviewDriver.driverPhoto ||
+                      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80'
+                    }
+                    alt={selectedReviewDriver.driverName}
+                    className="w-20 h-20 rounded-2xl object-cover border-2 border-amber-400 shadow-xs cursor-pointer group-hover:brightness-95 transition-all"
+                    onClick={() =>
+                      setActivePhotoModal({
+                        url:
+                          selectedReviewDriver.driverPhoto ||
+                          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+                        title: `Driver Photo - ${selectedReviewDriver.driverName}`
+                      })
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActivePhotoModal({
+                        url:
+                          selectedReviewDriver.driverPhoto ||
+                          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+                        title: `Driver Photo - ${selectedReviewDriver.driverName}`
+                      })
+                    }
+                    className="absolute bottom-1 right-1 p-1 bg-black/70 hover:bg-black text-white rounded-lg cursor-pointer"
+                    title="Zoom Driver Photo"
+                  >
+                    <Eye className="w-3 h-3" />
+                  </button>
+                  <span className="absolute -top-1.5 -left-1.5 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white font-black text-[9px] uppercase tracking-wider shadow-2xs">
+                    Selfie
+                  </span>
+                </div>
+
+                <div className="space-y-1.5 flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-lg font-black text-[#111111]">{selectedReviewDriver.driverName}</h4>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      Govt Verified Captain
+                    </span>
+                  </div>
+
+                  <div className="text-neutral-600 space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-neutral-400 font-semibold">Phone:</span>
+                      <strong className="text-neutral-900 font-mono">{selectedReviewDriver.phone}</strong>
+                      <button
+                        type="button"
+                        onClick={() => copyPinToClipboard(selectedReviewDriver.phone)}
+                        className="text-[10px] text-[#C8622A] hover:underline font-bold cursor-pointer ml-1"
+                      >
+                        Copy
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-neutral-400 font-semibold">Registered:</span>
+                      <span className="text-neutral-700">
+                        {selectedReviewDriver.createdAt
+                          ? new Date(selectedReviewDriver.createdAt).toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric'
+                            })
+                          : 'Recent'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-neutral-400 font-semibold">Service Zone:</span>
+                      <span className="text-neutral-700 font-medium">Kolkata & Salt Lake Sector V</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-1 flex flex-wrap gap-1.5">
+                    <span className="px-2 py-0.5 bg-white border border-neutral-200 rounded-md text-[10px] font-bold text-neutral-700 flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-600" /> Aadhaar Verified
+                    </span>
+                    <span className="px-2 py-0.5 bg-white border border-neutral-200 rounded-md text-[10px] font-bold text-neutral-700 flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-600" /> Commercial DL Valid
+                    </span>
+                    <span className="px-2 py-0.5 bg-white border border-neutral-200 rounded-md text-[10px] font-bold text-neutral-700 flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-600" /> Mobile OTP Confirmed
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: VEHICLE INFORMATION & LICENSE PLATE */}
+              <div className="p-4 bg-white rounded-2xl border border-neutral-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-extrabold text-neutral-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <Car className="w-4 h-4 text-emerald-600" />
+                    <span>Registered Toto Vehicle Details</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Eco 100% Electric
+                  </span>
+                </div>
+
+                {/* Indian High Security Registration Plate (HSRP) representation */}
+                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase text-neutral-400">Official License Plate</div>
+                    <div className="mt-1 inline-flex items-center rounded-lg border-2 border-neutral-800 bg-amber-300 overflow-hidden shadow-2xs font-mono font-black text-base text-neutral-950">
+                      <div className="bg-blue-800 text-white px-2 py-1 flex flex-col items-center justify-center text-[8px] leading-tight font-sans">
+                        <span>IND</span>
+                      </div>
+                      <div className="px-3 py-1 tracking-wider">
+                        {selectedReviewDriver.vehicleNumber}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-0.5 text-right sm:text-right w-full sm:w-auto">
+                    <div className="text-[10px] font-bold uppercase text-neutral-400">Vehicle Model</div>
+                    <div className="font-extrabold text-neutral-900 text-sm">{selectedReviewDriver.vehicleModel}</div>
+                    <div className="text-[11px] text-neutral-600 font-medium">
+                      Color: <strong className="text-neutral-800">{selectedReviewDriver.vehicleColor}</strong> • 4 Seats + Driver
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                  <div className="p-2.5 rounded-xl border border-neutral-200 bg-[#FAF8F5]">
+                    <div className="text-[10px] text-neutral-400 font-bold uppercase">Battery System</div>
+                    <div className="font-bold text-neutral-800 mt-0.5">60V Li-ion (LFP)</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl border border-neutral-200 bg-[#FAF8F5]">
+                    <div className="text-[10px] text-neutral-400 font-bold uppercase">Motor Output</div>
+                    <div className="font-bold text-neutral-800 mt-0.5">1200W BLDC</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl border border-neutral-200 bg-[#FAF8F5]">
+                    <div className="text-[10px] text-neutral-400 font-bold uppercase">Fitness Valid</div>
+                    <div className="font-bold text-emerald-700 mt-0.5">Passed Oct 2028</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl border border-neutral-200 bg-[#FAF8F5]">
+                    <div className="text-[10px] text-neutral-400 font-bold uppercase">Commercial Permit</div>
+                    <div className="font-bold text-emerald-700 mt-0.5">WB-RTO Verified</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3: TOTO VEHICLE PHOTOS */}
+              <div className="p-4 bg-white rounded-2xl border border-neutral-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-extrabold text-neutral-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <Eye className="w-4 h-4 text-[#C8622A]" />
+                    <span>Toto Vehicle Inspection Photos</span>
+                  </div>
+                  <span className="text-[11px] text-neutral-500 font-medium">Click any photo to enlarge</span>
+                </div>
+
+                {/* Photos Grid */}
+                {(() => {
+                  const photos =
+                    selectedReviewDriver.totoPhotos && selectedReviewDriver.totoPhotos.length > 0
+                      ? selectedReviewDriver.totoPhotos
+                      : [
+                          'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=600&auto=format&fit=crop&q=80',
+                          'https://images.unsplash.com/photo-1558980664-769d59546b3d?w=600&auto=format&fit=crop&q=80',
+                          'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&auto=format&fit=crop&q=80'
+                        ];
+
+                  const photoLabels = [
+                    'Front View & Number Plate',
+                    'Passenger Cabin & Seating',
+                    'Battery Compartment & Chassis'
+                  ];
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {photos.slice(0, 3).map((url, idx) => (
+                        <div
+                          key={idx}
+                          className="group relative rounded-2xl overflow-hidden border border-neutral-200 bg-neutral-100 aspect-4/3 cursor-pointer shadow-2xs hover:shadow-xs transition-all"
+                          onClick={() =>
+                            setActivePhotoModal({
+                              url,
+                              title: `Toto Vehicle Photo #${idx + 1}: ${photoLabels[idx] || 'Exterior'}`
+                            })
+                          }
+                        >
+                          <img
+                            src={url}
+                            alt={`Toto vehicle view ${idx + 1}`}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-90 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2">
+                            <span className="self-end px-1.5 py-0.5 rounded bg-black/60 text-white font-mono text-[9px]">
+                              #{idx + 1}
+                            </span>
+                            <div className="flex items-center justify-between text-white text-[10px] font-bold">
+                              <span className="truncate pr-1">{photoLabels[idx] || 'Toto Photo'}</span>
+                              <Eye className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* SECTION 4: ADMIN REVIEW CHECKLIST */}
+              <div className="p-4 bg-[#FAF8F5] rounded-2xl border border-neutral-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase text-neutral-800 tracking-wider">
+                    Verification Review Checklist
+                  </span>
+                  {!isReviewedApproved && selectedReviewDriver.status !== 'approved' && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAsApproved}
+                      className="text-xs font-bold text-[#C8622A] hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Mark All as Reviewed & Approved
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white border border-neutral-200 cursor-pointer hover:border-neutral-300 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={reviewChecklist.identityVerified}
+                      onChange={() => handleToggleReviewCheck('identityVerified')}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span className="text-neutral-800 font-medium">
+                      Driver photo matches registered name and government identification.
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white border border-neutral-200 cursor-pointer hover:border-neutral-300 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={reviewChecklist.plateVerified}
+                      onChange={() => handleToggleReviewCheck('plateVerified')}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span className="text-neutral-800 font-medium">
+                      License plate <strong className="font-mono">{selectedReviewDriver.vehicleNumber}</strong> matches official state transport registration.
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white border border-neutral-200 cursor-pointer hover:border-neutral-300 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={reviewChecklist.vehiclePhotosApproved}
+                      onChange={() => handleToggleReviewCheck('vehiclePhotosApproved')}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span className="text-neutral-800 font-medium">
+                      Toto photos inspected: clean cabin, intact passenger hood, and functional battery.
+                    </span>
+                  </label>
+                </div>
+
+                {/* APPROVED STATUS INDICATOR */}
+                {(isReviewedApproved || selectedReviewDriver.status === 'approved') && (
+                  <div 
+                    id="review-approved-status-indicator"
+                    className="p-3.5 bg-emerald-50 border-2 border-emerald-400 rounded-2xl flex items-center justify-between shadow-2xs animate-in zoom-in-95 duration-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-2xs shrink-0">
+                        <Check className="w-5 h-5 stroke-[3]" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-black text-emerald-950 uppercase tracking-wide flex items-center gap-1.5">
+                          <span>Verification Status: Approved</span>
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        </div>
+                        <div className="text-[11px] text-emerald-700 font-medium">
+                          Driver identity, vehicle plate, and Toto inspection photos reviewed and approved by Admin.
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-3 py-1 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-2xs shrink-0">
+                      Approved
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* GENERATED PIN STATE (IF ALREADY FINALIZED OR GENERATED) */}
+              {(reviewGeneratedPin || selectedReviewDriver.generatedPin) && (
+                <div className="p-4 bg-white border-2 border-emerald-300 rounded-3xl space-y-3 animate-in zoom-in-95 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                        SECURITY PIN READY
+                      </span>
+                      <h4 className="text-sm font-extrabold text-[#111111]">
+                        Captain Login PIN Assigned
+                      </h4>
+                    </div>
+                    <span className="text-3xl font-mono font-black tracking-widest text-[#111111] bg-amber-100 px-4 py-1.5 rounded-2xl border border-amber-300 shadow-2xs">
+                      {reviewGeneratedPin || selectedReviewDriver.generatedPin}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => copyPinToClipboard(reviewGeneratedPin || selectedReviewDriver.generatedPin || '1234')}
+                      className="flex-1 py-2.5 bg-neutral-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all active:scale-95"
+                    >
+                      {copiedPin ? <CheckCheck className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedPin ? 'PIN Copied!' : 'Copy Security PIN'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleTestLoginAsDriver(
+                          selectedReviewDriver.phone,
+                          reviewGeneratedPin || selectedReviewDriver.generatedPin || '1234'
+                        );
+                        setSelectedReviewDriver(null);
+                      }}
+                      className="flex-1 py-2.5 bg-[#FF6B2C] hover:bg-[#E55A1F] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all active:scale-95"
+                    >
+                      <LogIn className="w-3.5 h-3.5" />
+                      <span>Test Driver Login</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer / Action Bar */}
+            <div className="pt-4 border-t border-neutral-100 shrink-0 space-y-2">
+              {!reviewGeneratedPin && selectedReviewDriver.status !== 'approved' ? (
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <button
+                    id="details-review-generate-pin-btn"
+                    type="button"
+                    disabled={isProcessingId === selectedReviewDriver.id}
+                    onClick={() => handleFinalizeAndGeneratePin(selectedReviewDriver)}
+                    className="w-full sm:flex-1 py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isProcessingId === selectedReviewDriver.id ? (
+                      <RotateCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Key className="w-4 h-4 text-amber-200" />
+                    )}
+                    <span>Generate PIN</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isProcessingId === selectedReviewDriver.id}
+                    onClick={() => {
+                      handleReject(selectedReviewDriver.id);
+                      setSelectedReviewDriver(null);
+                    }}
+                    className="w-full sm:w-auto py-3 px-4 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    Reject Application
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleOpenDeleteModal(selectedReviewDriver);
+                    }}
+                    className="w-full sm:w-auto py-3 px-4 rounded-2xl bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs border border-rose-200 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                    title="Permanently Delete Driver Profile"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Delete Profile</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedReviewDriver(null)}
+                    className="w-full sm:w-auto py-3 px-4 rounded-2xl border border-neutral-300 hover:bg-neutral-100 text-neutral-700 font-bold text-xs transition-all cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleOpenDeleteModal(selectedReviewDriver);
+                    }}
+                    className="py-2.5 px-4 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                    title="Permanently Delete Driver Profile"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Driver Profile</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedReviewDriver(null)}
+                    className="py-2.5 px-6 rounded-2xl bg-neutral-900 hover:bg-black text-white font-extrabold text-xs transition-all cursor-pointer shadow-xs"
+                  >
+                    Done & Close Dossier
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PHOTO LIGHTBOX ZOOM MODAL */}
+      {activePhotoModal && (
+        <div 
+          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setActivePhotoModal(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl max-w-xl w-full p-4 space-y-3 shadow-2xl border border-neutral-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
+              <h4 className="font-extrabold text-sm text-neutral-900 truncate">
+                {activePhotoModal.title}
+              </h4>
+              <button
+                type="button"
+                onClick={() => setActivePhotoModal(null)}
+                className="w-7 h-7 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-600 font-bold flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="rounded-2xl overflow-hidden bg-neutral-900 max-h-[70vh] flex items-center justify-center">
+              <img
+                src={activePhotoModal.url}
+                alt={activePhotoModal.title}
+                className="w-full h-auto max-h-[70vh] object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Generated PIN Confirmation Modal */}
       {approvedPinModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -910,6 +1634,7 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* Admin Password Change Modal */}
+      {/* CREDENTIALS UPDATE MODAL */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 border border-neutral-200 shadow-xl text-left">
@@ -919,8 +1644,8 @@ export const AdminDashboard: React.FC = () => {
                   <Key className="w-4 h-4 text-[#C8622A]" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-neutral-900">Update Admin Password</h3>
-                  <p className="text-[11px] text-neutral-500">Stored securely for future logins</p>
+                  <h3 className="text-sm font-bold text-neutral-900">Admin Credentials</h3>
+                  <p className="text-[11px] text-neutral-500">Update Username & Password for future logins</p>
                 </div>
               </div>
               <button
@@ -935,6 +1660,10 @@ export const AdminDashboard: React.FC = () => {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                if (!newUsernameVal.trim() || newUsernameVal.trim().length < 3) {
+                  setPasswordNotice({ success: false, msg: 'Username must be at least 3 characters long.' });
+                  return;
+                }
                 if (!newPasswordVal.trim() || newPasswordVal.trim().length < 3) {
                   setPasswordNotice({ success: false, msg: 'Password must be at least 3 characters long.' });
                   return;
@@ -943,9 +1672,19 @@ export const AdminDashboard: React.FC = () => {
                   setPasswordNotice({ success: false, msg: 'Passwords do not match.' });
                   return;
                 }
-                const res = updateAdminPassword(newPasswordVal);
+                const res = updateAdminCredentials(newUsernameVal, newPasswordVal);
                 if (res.success) {
-                  setPasswordNotice({ success: true, msg: 'Password successfully updated!' });
+                  setPasswordNotice({ success: true, msg: 'Credentials successfully updated!' });
+                  setAuditLogs(prev => [
+                    {
+                      id: String(Date.now()),
+                      action: 'Admin Credentials Updated',
+                      actor: newUsernameVal.trim(),
+                      target: `Username: "${newUsernameVal.trim()}"`,
+                      time: 'Just now'
+                    },
+                    ...prev
+                  ]);
                   setTimeout(() => {
                     setShowPasswordModal(false);
                     setNewPasswordVal('');
@@ -960,13 +1699,13 @@ export const AdminDashboard: React.FC = () => {
             >
               <div>
                 <label className="text-xs font-bold text-neutral-700 block mb-1">
-                  New Admin Password
+                  Admin Username
                 </label>
                 <input
-                  type="password"
-                  value={newPasswordVal}
-                  onChange={(e) => setNewPasswordVal(e.target.value)}
-                  placeholder="Enter new password"
+                  type="text"
+                  value={newUsernameVal}
+                  onChange={(e) => setNewUsernameVal(e.target.value)}
+                  placeholder="Admin"
                   required
                   className="w-full px-3 py-2.5 bg-[#FAF8F5] border border-neutral-200 rounded-xl text-xs font-semibold text-neutral-900 focus:outline-none focus:border-[#C8622A]"
                 />
@@ -974,7 +1713,21 @@ export const AdminDashboard: React.FC = () => {
 
               <div>
                 <label className="text-xs font-bold text-neutral-700 block mb-1">
-                  Confirm Password
+                  New Admin Password
+                </label>
+                <input
+                  type="password"
+                  value={newPasswordVal}
+                  onChange={(e) => setNewPasswordVal(e.target.value)}
+                  placeholder="Enter new password (min. 3 chars)"
+                  required
+                  className="w-full px-3 py-2.5 bg-[#FAF8F5] border border-neutral-200 rounded-xl text-xs font-semibold text-neutral-900 focus:outline-none focus:border-[#C8622A]"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-neutral-700 block mb-1">
+                  Confirm New Password
                 </label>
                 <input
                   type="password"
@@ -1004,13 +1757,104 @@ export const AdminDashboard: React.FC = () => {
                   type="submit"
                   className="flex-1 py-2.5 bg-[#181818] hover:bg-black text-white font-bold text-xs rounded-xl cursor-pointer active:scale-95 transition-all shadow-xs"
                 >
-                  Save Password
+                  Save Credentials
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Admin Logout Confirmation Modal */}
+      {showLogoutConfirmModal && (
+        <div 
+          id="admin-logout-modal-backdrop"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setShowLogoutConfirmModal(false)}
+        >
+          <div 
+            id="admin-logout-modal"
+            className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 border border-neutral-200 shadow-2xl text-left animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 pb-3 border-b border-neutral-100">
+              <div className="p-2.5 bg-red-50 text-red-600 rounded-2xl border border-red-200/80 shrink-0">
+                <LogOut className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5 flex-1">
+                <h3 className="text-base font-extrabold text-neutral-900 leading-tight">
+                  Log Out of Admin Console?
+                </h3>
+                <p className="text-xs text-neutral-500 font-medium">
+                  Administrator Reconfirmation
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirmModal(false)}
+                className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center text-xs font-bold transition-colors cursor-pointer"
+                title="Cancel and close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-amber-950 font-medium">
+                <AlertTriangle className="w-4 h-4 text-[#C8622A] shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  Are you sure you want to exit the admin dashboard? You will be signed out of administrative operations and will require administrator credentials (<span className="font-bold text-neutral-900">{adminCredentials?.username || 'Admin'}</span>) to sign back in.
+                </div>
+              </div>
+
+              <div className="text-[11px] text-neutral-500 px-1">
+                {pendingLogoutTarget === 'driver' 
+                  ? 'Confirming will end your administrative privileges and switch you back to the Toto Partner view.'
+                  : 'Confirming will revoke administrative privileges and sign you out of the admin console.'}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 border-t border-neutral-100">
+              <button
+                id="admin-logout-cancel-btn"
+                type="button"
+                onClick={() => {
+                  triggerSound('beep');
+                  setShowLogoutConfirmModal(false);
+                }}
+                className="flex-1 py-2.5 px-4 bg-neutral-100 hover:bg-neutral-200 active:scale-95 text-neutral-800 font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
+              >
+                Stay Logged In
+              </button>
+
+              <button
+                id="admin-logout-confirm-btn"
+                type="button"
+                onClick={() => {
+                  triggerSound('beep');
+                  setShowLogoutConfirmModal(false);
+                  logoutAdmin();
+                  if (pendingLogoutTarget === 'driver') {
+                    setActiveRole('driver');
+                  }
+                }}
+                className="flex-1 py-2.5 px-4 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer text-center"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Yes, Log Out</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DRIVER PROFILE DELETION WORKFLOW MODAL */}
+      <DeleteDriverModal
+        driver={driverToDelete}
+        isOpen={!!driverToDelete}
+        onClose={() => setDriverToDelete(null)}
+        onConfirmDelete={handleConfirmDeleteDriver}
+      />
     </div>
   );
 };
