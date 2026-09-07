@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { RideProvider, useRide } from './context/RideContext';
 import { Header } from './components/common/Header';
 import { BottomNavigation } from './components/common/BottomNavigation';
-import { FirestoreQuotaBanner } from './components/common/FirestoreQuotaBanner';
 import { SplashScreen } from './components/common/SplashScreen';
 import { UserLogin } from './components/user/UserLogin';
 import { UserDashboard } from './components/user/UserDashboard';
@@ -46,7 +45,6 @@ const MainAppContent: React.FC = () => {
     <div className="min-h-screen bg-[#FAF8F5] text-[#111111] flex flex-col font-sans selection:bg-[#FDE8DC] selection:text-[#C8622A] pt-[58px] sm:pt-[64px]">
       {/* Top Application Header */}
       <Header />
-      <FirestoreQuotaBanner />
 
       {/* Main Screen Content Body */}
       <main className="flex-1 w-full max-w-6xl mx-auto p-0 sm:p-4 md:p-6 pb-28 sm:pb-32 flex flex-col justify-start">

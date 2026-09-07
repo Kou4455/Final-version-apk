@@ -12,6 +12,7 @@ import {
   Star, 
   MapPin, 
   ChevronDown, 
+  ChevronUp,
   X, 
   ShieldCheck, 
   Navigation,
@@ -56,6 +57,7 @@ import { ChatModal } from '../modals/ChatModal';
 import { SosModal } from '../modals/SosModal';
 import { FareBreakdownModal } from '../modals/FareBreakdownModal';
 import { CouponsModal } from '../modals/CouponsModal';
+import { FullScreenLocationSearchModal } from './FullScreenLocationSearchModal';
 import { RideHistoryPage } from './RideHistoryPage';
 import { ProfileSettingsPage } from './ProfileSettingsPage';
 
@@ -105,6 +107,7 @@ export const UserDashboard: React.FC = () => {
     cancelOfferSearch,
     createRideBooking, 
     cancelRide, 
+    dispatchRideRequest,
     rateRide,
     rateRideWithTags,
     walletBalance,
@@ -136,6 +139,29 @@ export const UserDashboard: React.FC = () => {
   const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'wallet'>('cash');
   const [gpsAutoSynced, setGpsAutoSynced] = useState(false);
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [captainAcceptedToast, setCaptainAcceptedToast] = useState(false);
+
+  const hasActiveRide = Boolean(
+    activeRide && 
+    activeRide.status !== 'completed' && 
+    activeRide.status !== 'cancelled' && 
+    activeRide.status !== 'idle'
+  );
+
+  // Monitor when activeRide status transitions from 'searching' to 'driver_assigned' to celebrate acceptance
+  const prevRideStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeRide?.status === 'driver_assigned' && prevRideStatusRef.current === 'searching') {
+      setCaptainAcceptedToast(true);
+      triggerSound('success');
+      const timer = setTimeout(() => {
+        setCaptainAcceptedToast(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+    prevRideStatusRef.current = activeRide?.status || null;
+  }, [activeRide?.status, triggerSound]);
   const [notificationToast, setNotificationToast] = useState<{
     driverName: string;
     vehicleNumber: string;
@@ -146,6 +172,7 @@ export const UserDashboard: React.FC = () => {
 
   // Modals Visibility States
   const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [isFullScreenSearchOpen, setIsFullScreenSearchOpen] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [isSavedPlacesOpen, setIsSavedPlacesOpen] = useState(false);
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
@@ -160,6 +187,7 @@ export const UserDashboard: React.FC = () => {
   const [appliedCoupon, setAppliedCoupon] = useState<CouponItem | null>(null);
   const [receiptRideData, setReceiptRideData] = useState<ActiveRide | null>(null);
   const [supportRideId, setSupportRideId] = useState<string | undefined>(undefined);
+  const [isBookingCardCollapsed, setIsBookingCardCollapsed] = useState(false);
   
   // Real-Time Mobile GPS Tracking Hook
   const {
@@ -386,15 +414,46 @@ export const UserDashboard: React.FC = () => {
   const [ratingScore, setRatingScore] = useState(5);
   const [ratingComment, setRatingComment] = useState('Great eco-friendly toto ride!');
 
-  // Handle Find a ride - Scan nearby online Toto partners with dynamic bids
-  const handleFindRide = () => {
+  // Handle Book Toto - Broadcasts ride request to nearby captains
+  const handleBookToto = async () => {
     if (!pickup) return;
+
+    // Use current dropoff or default popular destination if not yet chosen
+    const targetDropoff = dropoff || POPULAR_LOCATIONS[1];
     if (!dropoff) {
-      setShowLocationPicker('dropoff');
-      triggerSound('alert');
-      return;
+      setDropoff(targetDropoff);
     }
-    findNearbyTotoOffers(pickup, dropoff, selectedTier.name);
+
+    setIsBroadcasting(true);
+    triggerSound('alert');
+
+    try {
+      const newRide = await createRideBooking(
+        pickup,
+        targetDropoff,
+        selectedTier.id,
+        paymentMethod,
+        appliedCoupon?.code
+      );
+
+      // Automatically broadcast request to nearby captains in Firestore
+      if (dispatchRideRequest) {
+        await dispatchRideRequest({
+          rideId: newRide.id,
+          driverId: 'all',
+          passengerName: user?.name || 'Passenger',
+          pickupName: pickup.name,
+          dropoffName: targetDropoff.name,
+          fare: newRide.totalFare,
+          distanceKm: estimatedDistanceKm,
+          status: 'searching'
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.error('Error broadcasting Toto booking:', err);
+    } finally {
+      setIsBroadcasting(false);
+    }
   };
 
   // Handle passenger selecting a specific Toto Partner and price
@@ -522,7 +581,77 @@ export const UserDashboard: React.FC = () => {
   const currentFare = activeRide?.totalFare || Math.max(15, rawFare - couponDiscount);
 
   return (
-    <div className="w-full max-w-lg md:max-w-xl mx-auto py-2 px-2.5 sm:px-4 font-sans select-none space-y-3.5 flex-1 flex flex-col">
+    <div 
+      id="user-dashboard-root-container"
+      className="max-w-lg md:max-w-xl mx-auto py-2 px-2.5 sm:px-4 space-y-3.5 flex-1 flex flex-col pointer-events-auto"
+    >
+      {/* Top-screen Notification: Waiting for Captain to Accept */}
+      {activeRide && activeRide.status === 'searching' && (
+        <div 
+          id="waiting-captain-notification"
+          className="fixed top-3 sm:top-5 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md bg-[#181818] text-white p-3.5 sm:p-4 rounded-3xl shadow-[0_12px_36px_rgba(0,0,0,0.35)] border border-[#333333] flex items-center justify-between gap-3 animate-in slide-in-from-top-4 duration-300"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="relative w-10 h-10 rounded-2xl bg-[#FFF4ED] border border-[#FFD8C2] flex items-center justify-center shrink-0">
+              <span className="absolute inset-0 rounded-2xl bg-[#FF6B2C]/25 animate-ping" />
+              <Radio className="w-5 h-5 text-[#FF6B2C] animate-pulse" />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h4 className="text-xs sm:text-sm font-extrabold text-white tracking-tight truncate">
+                  Waiting for captain to accept
+                </h4>
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+              </div>
+              <p className="text-[11px] text-gray-300 truncate mt-0.5">
+                Broadcasting request to nearby Toto captains...
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              cancelRide('Cancelled during broadcast');
+              triggerSound('beep');
+            }}
+            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-xs text-gray-200 hover:text-white font-bold transition-all shrink-0 cursor-pointer"
+            title="Cancel request"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Top-screen Notification: Captain Accepted Toast */}
+      {captainAcceptedToast && activeRide && (
+        <div 
+          id="captain-accepted-notification"
+          className="fixed top-3 sm:top-5 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md bg-[#15803D] text-white p-3.5 sm:p-4 rounded-3xl shadow-[0_12px_36px_rgba(21,128,61,0.35)] border border-[#166534] flex items-center justify-between gap-3 animate-in slide-in-from-top-4 duration-300"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-white text-[#15803D] flex items-center justify-center shrink-0 shadow-xs">
+              <Check className="w-5 h-5 stroke-[3]" />
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-xs sm:text-sm font-extrabold text-white tracking-tight truncate">
+                Captain Accepted!
+              </h4>
+              <p className="text-[11px] text-emerald-100 truncate mt-0.5">
+                Captain {activeRide.driverName || 'Subhashish'} has accepted your ride ({liveEtaData?.etaText || '3 mins'}).
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCaptainAcceptedToast(false)}
+            className="text-white/80 hover:text-white text-xs cursor-pointer p-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {activeNavTab === 'rides' ? (
         <RideHistoryPage
           activeRide={activeRide}
@@ -601,16 +730,31 @@ export const UserDashboard: React.FC = () => {
         />
       ) : (
         <>
-          {/* Top Header Section */}
-          <div className="flex items-center justify-between pt-1 pb-1 w-full">
-            <div>
-              <div className="text-[11px] font-bold tracking-wider uppercase text-[#C8622A] flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>LIVE GPS ACTIVE</span>
+          {/* Top Header Section: Search Bar */}
+          <div 
+            id="search-bar-map-container"
+            className="w-full"
+          >
+            {/* Dynamic Animated Capsule Search Bar matching search bar.jpeg */}
+            <div
+              id="dynamic-animated-search-bar"
+              onClick={() => {
+                triggerSound('beep');
+                setIsFullScreenSearchOpen(true);
+              }}
+              className="w-full bg-white hover:bg-[#FAF8F5] active:bg-[#F4F1EA] rounded-full border border-[#E2E8F0] hover:border-amber-300 shadow-xs py-3 sm:py-3.5 px-4 sm:px-5 flex items-center justify-between gap-3 transition-all cursor-pointer group relative overflow-hidden select-none"
+              title="Tap to search pickup and drop destinations across India"
+            >
+              {/* Subtle animated warm golden/amber glow line along bottom */}
+              <div className="absolute -bottom-px left-12 right-12 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-transparent opacity-85 group-hover:opacity-100 transition-opacity pointer-events-none" />
+
+              {/* Left Search Icon & Text */}
+              <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                <Search className="w-5 h-5 text-[#111111] shrink-0 group-hover:scale-105 transition-transform" />
+                <span className="text-base sm:text-lg font-bold text-[#111111] tracking-tight truncate">
+                  {dropoff?.name ? dropoff.name : 'Where do you want to go?'}
+                </span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-[#111111] tracking-tight">
-                Where to next?
-              </h1>
             </div>
           </div>
 
@@ -636,101 +780,58 @@ export const UserDashboard: React.FC = () => {
           triggerSound('beep');
         }}
         onCenterGps={refreshCurrentLocation}
-        heightClass={
-          activeRide && activeRide.status !== 'completed' && activeRide.status !== 'cancelled' && activeRide.status !== 'idle'
-            ? "h-[290px] xs:h-[320px] sm:h-[360px] md:h-[400px]"
-            : "h-[230px] xs:h-[250px] sm:h-[280px]"
-        }
+        heightClass="h-[340px] sm:h-[380px] md:h-[420px]"
       />
 
-      {/* Route & Booking Card */}
-      <div className="bg-white rounded-3xl p-3.5 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-3.5 sm:space-y-4 w-full">
-        {/* Unified Search Bar matching search bar.jpeg */}
-        <div 
-          id="unified-search-bar"
-          className="rounded-3xl bg-[#FAF9F7] sm:bg-[#F8F9FA] hover:bg-[#F4F3EF] border border-[#E2E8F0] p-4 sm:p-4.5 shadow-2xs transition-all flex items-center gap-3.5 sm:gap-4 group"
-        >
-          {/* Left: Route Track Icons (Green halo dot, dashed line, terracotta dot) */}
-          <div className="flex flex-col items-center justify-between py-1 shrink-0 self-stretch select-none">
-            {/* Top: Pickup Green Concentric Indicator with soft halo */}
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#D1FAE5] flex items-center justify-center shrink-0 shadow-2xs">
-              <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-[#15803D] flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-white" />
-              </div>
-            </div>
-
-            {/* Vertical Dashed Line */}
-            <div className="w-[2px] flex-1 my-1.5 border-l-2 border-dashed border-[#475569] min-h-[22px] sm:min-h-[26px]" />
-
-            {/* Bottom: Drop Terracotta Concentric Indicator */}
-            <div className="w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full bg-[#9A3412] flex items-center justify-center shrink-0 shadow-2xs">
-              <div className="w-1.5 h-1.5 rounded-full bg-white" />
-            </div>
+      {/* Route & Booking Card (Only shown when not in an active or completed ride) */}
+      {(!activeRide || activeRide.status === 'cancelled' || activeRide.status === 'idle') && (
+      <div 
+        id="route-booking-card"
+        className="w-full bg-white rounded-3xl p-3.5 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-3.5 sm:space-y-4"
+      >
+        {/* Top Header with Minimize Toggle to Explore Full Map */}
+        <div className="flex items-center justify-between pb-1 -mt-1 border-b border-[#F4EFE6]">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#FF6B2C]" />
+            <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+              {isBookingCardCollapsed ? 'Ride Preview' : 'Select Ride'}
+            </span>
           </div>
-
-          {/* Right: Location Text Rows */}
-          <div className="flex-1 flex flex-col justify-between min-w-0">
-            {/* Pickup Location Row */}
-            <div 
-              id="search-pickup-location"
-              onClick={() => {
-                triggerSound('beep');
-                setShowLocationPicker('pickup');
-              }}
-              className="py-1 sm:py-1.5 flex items-center justify-between cursor-pointer min-h-[38px] select-none"
-              title="Click to set pickup location"
-            >
-              <div className="flex-1 min-w-0 pr-2">
-                <span className={`text-[15px] sm:text-base tracking-tight truncate block ${
-                  pickup?.name ? 'font-medium text-[#111111]' : 'text-[#475569]'
-                }`}>
-                  {pickup?.name || 'Pickup location'}
-                </span>
-              </div>
-              <ChevronDown className="w-4 h-4 text-slate-400 group-hover:text-slate-700 transition-colors shrink-0" />
-            </div>
-
-            {/* Subtle Horizontal Divider Line */}
-            <div className="h-[1px] bg-[#E2E8F0] my-1 sm:my-1.5" />
-
-            {/* Drop Location Row */}
-            <div 
-              id="search-drop-location"
-              onClick={() => {
-                triggerSound('beep');
-                setShowLocationPicker('dropoff');
-              }}
-              className="py-1 sm:py-1.5 flex items-center justify-between cursor-pointer min-h-[38px] select-none"
-              title="Click to set destination drop location"
-            >
-              <div className="flex-1 min-w-0 pr-2">
-                <span className={`text-[15px] sm:text-base tracking-tight truncate block ${
-                  dropoff?.name ? 'font-medium text-[#111111]' : 'text-[#475569]'
-                }`}>
-                  {dropoff?.name || 'Drop location'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {dropoff && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDropoff(null);
-                      triggerSound('beep');
-                    }}
-                    className="w-5 h-5 rounded-full bg-neutral-200 hover:bg-neutral-300 text-neutral-600 flex items-center justify-center text-xs transition-colors cursor-pointer"
-                    title="Clear destination"
-                  >
-                    ✕
-                  </button>
-                )}
-                <ChevronDown className="w-4 h-4 text-slate-400 group-hover:text-slate-700 transition-colors" />
-              </div>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsBookingCardCollapsed(!isBookingCardCollapsed);
+              triggerSound('beep');
+            }}
+            className="text-[11px] text-gray-600 hover:text-black font-semibold flex items-center gap-1 py-1 px-2.5 rounded-full bg-neutral-100 hover:bg-neutral-200 transition-colors cursor-pointer"
+            title={isBookingCardCollapsed ? "Expand ride options" : "Minimize to view full map"}
+          >
+            <span>{isBookingCardCollapsed ? 'Expand Options' : 'View Full Map'}</span>
+            {isBookingCardCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
         </div>
 
+        {isBookingCardCollapsed ? (
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm font-bold text-[#111111] truncate">
+                {VEHICLE_TIERS.find((t) => t.id === selectedTierId)?.name || 'Toto Eco'}
+              </div>
+              <div className="text-[11px] text-[#FF6B2C] font-extrabold">
+                ₹{currentFare} • {estimatedDistanceKm.toFixed(1)} km
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleBookToto}
+              disabled={isBroadcasting}
+              className="py-2.5 px-4 sm:px-5 bg-[#FF6B2C] hover:bg-[#E55A1F] text-white font-extrabold text-xs sm:text-sm rounded-2xl shadow-xs cursor-pointer active:scale-98 transition-all shrink-0"
+            >
+              Book Toto
+            </button>
+          </div>
+        ) : (
+          <>
         {/* Vehicle / Ride Tier Selection Buttons (Matching user screenshot) */}
         <div 
           id="vehicle-tier-selection-list" 
@@ -846,23 +947,27 @@ export const UserDashboard: React.FC = () => {
           </button>
         </div>
 
-        {/* Find a ride Button */}
+        {/* Book Toto Button */}
         <button
           id="find-ride-btn"
           type="button"
-          onClick={handleFindRide}
-          disabled={Boolean(activeRide && activeRide.status !== 'completed' && activeRide.status !== 'cancelled')}
-          className="w-full min-h-[48px] bg-[#141414] hover:bg-black active:scale-[0.99] text-white font-bold py-3 px-4 rounded-2xl flex items-center justify-center gap-2 text-sm shadow-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={handleBookToto}
+          disabled={isBroadcasting || Boolean(activeRide && activeRide.status !== 'completed' && activeRide.status !== 'cancelled' && activeRide.status !== 'idle')}
+          className="w-full min-h-[50px] bg-[#141414] hover:bg-black active:scale-[0.99] text-white font-extrabold py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 text-sm sm:text-base shadow-[0_4px_14px_rgba(0,0,0,0.18)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.25)] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed group relative overflow-hidden"
+          title="Broadcast ride request to nearby Toto captains"
         >
-          {isScanningOffers ? (
+          {isBroadcasting ? (
             <>
-              <Loader2 className="w-4 h-4 text-[#FF6B2C] animate-spin" />
-              <span>Scanning Nearby Toto Partners...</span>
+              <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
+              <span>Broadcasting to Captains...</span>
             </>
           ) : (
             <>
-              <TotoRickshawIcon className="w-5 h-5 shrink-0" color="#FF6B2C" />
-              <span>Find a ride</span>
+              <TotoRickshawIcon className="w-5 h-5 shrink-0 group-hover:scale-110 transition-transform" color="#FF6B2C" />
+              <span>Book Toto</span>
+              <span className="text-xs font-semibold text-neutral-400 font-mono ml-1">
+                • ₹{currentFare}
+              </span>
             </>
           )}
         </button>
@@ -1005,7 +1110,299 @@ export const UserDashboard: React.FC = () => {
             </div>
           </div>
         )}
+        </>
+        )}
       </div>
+      )}
+
+      {/* Active Ride & Captain Details Section */}
+      {activeRide && activeRide.status !== 'cancelled' && activeRide.status !== 'idle' && (
+        <div 
+          id="active-ride-card"
+          className="w-full space-y-3 shadow-xs animate-in fade-in duration-300"
+        >
+          {/* Status 1: Ride Requested / Searching for Nearby Captains */}
+          {activeRide.status === 'searching' && (
+            <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="relative w-11 h-11 rounded-2xl bg-[#FFF4ED] border border-[#FFD8C2] flex items-center justify-center shrink-0 shadow-xs">
+                    <span className="absolute inset-0 rounded-2xl bg-[#FF6B2C]/20 animate-ping" />
+                    <Radio className="w-5 h-5 text-[#FF6B2C] animate-pulse" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm sm:text-base font-extrabold text-[#111111] truncate">
+                      Broadcasting to Nearby Captains
+                    </h3>
+                    <p className="text-xs text-neutral-500 truncate mt-0.5">
+                      Request sent to nearby Toto partners
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <div className="text-[10px] uppercase font-bold text-neutral-400">Total Fare</div>
+                  <div className="text-base sm:text-lg font-black text-[#111111]">
+                    ₹{activeRide.totalFare || currentFare}
+                  </div>
+                </div>
+              </div>
+
+              {/* Broadcast Progress Bar */}
+              <div className="w-full bg-neutral-100 rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-[#FF6B2C] rounded-full animate-pulse w-3/4" />
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <div className="flex items-center gap-2 text-xs text-neutral-600 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                  <span>Waiting for captain to accept...</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    cancelRide('Cancelled while waiting for captain');
+                    triggerSound('beep');
+                  }}
+                  className="py-2 px-3.5 bg-[#FEE2E2] hover:bg-[#FECACA] text-[#DC2626] text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel Request
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Status 2: Driver Assigned & En Route - Captain Details Display */}
+          {(activeRide.status === 'driver_assigned' || activeRide.status === 'driver_arrived' || activeRide.status === 'in_progress') && (
+            <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-3.5 sm:space-y-4">
+              {/* Captain Profile and Vehicle Info */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  {activeRide.driverPhoto ? (
+                    <img 
+                      src={activeRide.driverPhoto} 
+                      alt={activeRide.driverName}
+                      referrerPolicy="no-referrer"
+                      className="w-12 h-12 rounded-full object-cover border border-neutral-200 shadow-xs shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-[#FDE8DC] text-[#C8622A] flex items-center justify-center font-bold text-base shadow-xs shrink-0">
+                      {activeRide.driverName ? activeRide.driverName.charAt(0) : 'S'}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="text-sm sm:text-base font-bold text-[#111111] truncate">
+                      {activeRide.driverName || 'Subhashish Mondal'}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500 truncate">
+                      <span className="font-mono font-semibold text-neutral-800">{activeRide.vehicleNumber || 'WB-06-ER-4821'}</span>
+                      <span>•</span>
+                      <span className="flex items-center text-amber-600 font-semibold shrink-0">
+                        ★ 4.94
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-neutral-500 truncate mt-0.5">
+                      Mayuri Deluxe Eco E-Rickshaw
+                    </div>
+                  </div>
+                </div>
+
+                {/* OTP Code Badge */}
+                <div className="text-right shrink-0">
+                  <div className="text-[10px] uppercase font-bold text-gray-400">PIN OTP</div>
+                  <div className="text-base sm:text-lg font-black tracking-widest text-[#111111] font-mono">
+                    {activeRide.otp}
+                  </div>
+                </div>
+              </div>
+
+              {/* Ride Progress Status Banner with Live Estimated Time of Arrival */}
+              <div 
+                id="live-eta-progress-banner"
+                className="p-3.5 bg-[#F6F4F0] rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2.5 border border-[#EDE8E0] shadow-2xs"
+              >
+                <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                  <div className="relative flex items-center justify-center mt-0.5 sm:mt-0 shrink-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping absolute" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 relative" />
+                  </div>
+
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded-md font-mono">
+                        LIVE ETA
+                      </span>
+                      <span className="font-extrabold text-[#111111] text-xs sm:text-sm">
+                        {liveEtaData?.etaText || 'Calculating live arrival time...'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[11px] text-gray-500 font-medium flex-wrap">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-[#FF6B2C] shrink-0" />
+                        <span>Estimated Arrival: <strong className="text-neutral-800">{liveEtaData?.etaClock || 'Calculating...'}</strong></span>
+                      </span>
+                      {liveEtaData?.distanceText && (
+                        <>
+                          <span>•</span>
+                          <span className="text-gray-600">{liveEtaData.distanceText}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Total Fare & Expected Arrival Badge */}
+                <div className="flex items-center justify-between sm:flex-col sm:items-end shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-[#E8E4DC]">
+                  <div className="text-[10px] uppercase font-bold text-gray-400 sm:block hidden">
+                    Total Fare
+                  </div>
+                  <div className="font-black text-[#111111] text-sm sm:text-base">
+                    ₹{activeRide.totalFare}
+                  </div>
+                  {liveEtaData && (
+                    <div className="text-[10px] font-bold text-emerald-700 font-mono bg-white px-2 py-0.5 rounded-md border border-neutral-200 shadow-2xs">
+                      {liveEtaData.etaClock === 'Now' ? 'AT SPOT' : `ETA ${liveEtaData.etaClock}`}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions: Communication, Safety Suite & Cancellation */}
+              <div className="space-y-2 pt-1">
+                {/* 4-button Rapid Action Bar */}
+                <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                  <a
+                    href={`tel:${activeRide.driverPhone || '+919874522019'}`}
+                    className="min-h-[44px] py-2 px-1 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors"
+                    title="Call Captain"
+                  >
+                    <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="truncate">Call</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsChatOpen(true);
+                      triggerSound('beep');
+                    }}
+                    className="min-h-[44px] py-2 px-1 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors cursor-pointer"
+                    title="Chat with Captain"
+                  >
+                    <MessageSquare className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="truncate">Chat</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsShareTripOpen(true);
+                      triggerSound('beep');
+                    }}
+                    className="min-h-[44px] py-2 px-1 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors cursor-pointer"
+                    title="Share Live Trip"
+                  >
+                    <Share2 className="w-4 h-4 text-[#FF6B2C] shrink-0" />
+                    <span className="truncate">Share</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSosOpen(true);
+                      triggerSound('alert');
+                    }}
+                    className="min-h-[44px] py-2 px-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-red-200 transition-colors cursor-pointer animate-pulse"
+                    title="Emergency SOS"
+                  >
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                    <span className="truncate">SOS</span>
+                  </button>
+                </div>
+
+                {/* Secondary Controls: Safety Shield & Cancel Ride */}
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSafetyOpen(true);
+                      triggerSound('beep');
+                    }}
+                    className="flex-1 min-h-[42px] py-2 px-3 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-neutral-700 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-neutral-200 transition-colors cursor-pointer"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="truncate">Safety Center</span>
+                  </button>
+
+                  {activeRide.status !== 'in_progress' && (
+                    <button
+                      type="button"
+                      onClick={() => cancelRide('Passenger requested cancellation')}
+                      className="min-h-[42px] py-2 px-3 bg-[#FEE2E2] hover:bg-[#FECACA] text-[#DC2626] font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+                    >
+                      Cancel Ride
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Status 3: Ride Completed & Rating / Receipt */}
+          {activeRide.status === 'completed' && (
+            <div className="bg-white rounded-3xl p-5 shadow-xs border border-[#EDE8E0] space-y-4">
+              <div className="text-center space-y-1">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-2 shadow-2xs">
+                  <Check className="w-6 h-6 stroke-[3]" />
+                </div>
+                <h3 className="font-extrabold text-base text-[#111111]">Trip Completed!</h3>
+                <p className="text-xs text-neutral-500">
+                  Total fare of <strong className="text-[#111111]">₹{activeRide.totalFare}</strong> settled via {activeRide.paymentMethod.toUpperCase()}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReceiptRideData(activeRide);
+                    setIsReceiptOpen(true);
+                    triggerSound('beep');
+                  }}
+                  className="py-2.5 px-3 bg-[#FAF8F5] hover:bg-[#F2ECE1] text-[#111111] font-bold text-xs rounded-2xl border border-neutral-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5 text-[#FF6B2C]" />
+                  <span>Tax Receipt</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRatingOpen(true);
+                    triggerSound('beep');
+                  }}
+                  className="py-2.5 px-3 bg-[#FFF4ED] hover:bg-[#FFE5D3] text-[#C8622A] font-bold text-xs rounded-2xl border border-[#FFD8C2] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Star className="w-3.5 h-3.5 fill-[#FF6B2C] text-[#FF6B2C]" />
+                  <span>Rate Captain</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  cancelRide('Completed and reset');
+                  triggerSound('success');
+                }}
+                className="w-full py-3 bg-[#111111] hover:bg-black text-white font-bold text-xs rounded-2xl shadow-xs transition-colors cursor-pointer"
+              >
+                Book Next Ride
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Location Picker Modal / Sheet */}
       {showLocationPicker && (
@@ -1222,265 +1619,29 @@ export const UserDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Status 1: Ride Requested (Screenshot 1 & 2 exact banner) */}
-      {activeRide && activeRide.status === 'searching' && (
-        <div className="w-full bg-[#EAF5ED] text-[#1E3A24] rounded-2xl p-3.5 sm:p-4 flex items-center justify-between border border-[#D5EBDA] shadow-xs animate-in fade-in duration-300">
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-[#23864A] text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
-              <Check className="w-4 h-4 text-white stroke-[3]" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-bold text-[#111111] truncate">
-                Ride requested
-              </div>
-              <div className="text-xs text-[#555555] truncate">
-                {activeRide.driverName 
-                  ? `Selected Toto partner ${activeRide.driverName} notified.` 
-                  : 'Your toto request is visible to nearby drivers.'}
-              </div>
-            </div>
-          </div>
-          <div className="text-base font-extrabold text-[#111111] ml-2 shrink-0">
-            ₹{activeRide.totalFare || currentFare}
-          </div>
-        </div>
-      )}
-
-      {/* Status 2: Driver Assigned & En Route */}
-      {activeRide && (activeRide.status === 'driver_assigned' || activeRide.status === 'driver_arrived' || activeRide.status === 'in_progress') && (
-        <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-3.5 sm:space-y-4 animate-in fade-in duration-300">
-          {/* Top Driver Info */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-              {activeRide.driverPhoto ? (
-                <img 
-                  src={activeRide.driverPhoto} 
-                  alt={activeRide.driverName}
-                  referrerPolicy="no-referrer"
-                  className="w-11 h-11 rounded-full object-cover border border-neutral-200 shadow-xs shrink-0"
-                />
-              ) : (
-                <div className="w-11 h-11 rounded-full bg-[#FDE8DC] text-[#C8622A] flex items-center justify-center font-bold text-base shadow-xs shrink-0">
-                  {activeRide.driverName ? activeRide.driverName.charAt(0) : 'S'}
-                </div>
-              )}
-              <div className="min-w-0">
-                <div className="text-sm font-bold text-[#111111] truncate">
-                  {activeRide.driverName || 'Subhashish Mondal'}
-                </div>
-                <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-gray-500 truncate">
-                  <span className="font-mono">{activeRide.vehicleNumber || 'WB-06-ER-4821'}</span>
-                  <span>•</span>
-                  <span className="flex items-center text-amber-600 font-semibold shrink-0">
-                    ★ 4.94
-                  </span>
-                </div>
-                {activeRide.selectedOfferTag && (
-                  <div className="text-[10px] text-[#C8622A] font-bold mt-0.5 truncate">
-                    {activeRide.selectedOfferTag}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* OTP Code Badge */}
-            <div className="text-right shrink-0">
-              <div className="text-[10px] uppercase font-bold text-gray-400">PIN OTP</div>
-              <div className="text-base sm:text-lg font-black tracking-widest text-[#111111] font-mono">
-                {activeRide.otp}
-              </div>
-            </div>
-          </div>
-
-          {/* Ride Progress Status Banner with Live Estimated Time of Arrival */}
-          <div 
-            id="live-eta-progress-banner"
-            className="p-3.5 bg-[#F6F4F0] rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2.5 border border-[#EDE8E0] shadow-2xs"
-          >
-            <div className="flex items-start sm:items-center gap-2.5 min-w-0">
-              <div className="relative flex items-center justify-center mt-0.5 sm:mt-0 shrink-0">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping absolute" />
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 relative" />
-              </div>
-
-              <div className="min-w-0 space-y-0.5">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded-md font-mono">
-                    LIVE ETA
-                  </span>
-                  <span className="font-extrabold text-[#111111] text-xs sm:text-sm">
-                    {liveEtaData?.etaText || 'Calculating live arrival time...'}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 text-[11px] text-gray-500 font-medium flex-wrap">
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-[#FF6B2C] shrink-0" />
-                    <span>Estimated Time of Arrival: <strong className="text-neutral-800">{liveEtaData?.etaClock || 'Calculating...'}</strong></span>
-                  </span>
-                  {liveEtaData?.distanceText && (
-                    <>
-                      <span>•</span>
-                      <span className="text-gray-600">{liveEtaData.distanceText}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Total Fare & Expected Arrival Badge */}
-            <div className="flex items-center justify-between sm:flex-col sm:items-end shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-[#E8E4DC]">
-              <div className="text-[10px] uppercase font-bold text-gray-400 sm:block hidden">
-                Total Fare
-              </div>
-              <div className="font-black text-[#111111] text-sm sm:text-base">
-                ₹{activeRide.totalFare}
-              </div>
-              {liveEtaData && (
-                <div className="text-[10px] font-bold text-emerald-700 font-mono bg-white px-2 py-0.5 rounded-md border border-neutral-200 shadow-2xs">
-                  {liveEtaData.etaClock === 'Now' ? 'AT SPOT' : `ETA ${liveEtaData.etaClock}`}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Actions: Communication, Safety Suite & Cancellation */}
-          <div className="space-y-2 pt-1">
-            {/* 4-button Rapid Action Bar */}
-            <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
-              <a
-                href={`tel:${activeRide.driverPhone || '+919874522019'}`}
-                className="min-h-[44px] py-2 px-1 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors"
-                title="Call Captain"
-              >
-                <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span className="truncate">Call</span>
-              </a>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsChatOpen(true);
-                  triggerSound('beep');
-                }}
-                className="min-h-[44px] py-2 px-1 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors cursor-pointer"
-                title="Chat with Captain"
-              >
-                <MessageSquare className="w-4 h-4 text-blue-600 shrink-0" />
-                <span className="truncate">Chat</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsShareTripOpen(true);
-                  triggerSound('beep');
-                }}
-                className="min-h-[44px] py-2 px-1 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-[#111111] font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-neutral-200 transition-colors cursor-pointer"
-                title="Share Live Trip"
-              >
-                <Share2 className="w-4 h-4 text-[#FF6B2C] shrink-0" />
-                <span className="truncate">Share</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSosOpen(true);
-                  triggerSound('alert');
-                }}
-                className="min-h-[44px] py-2 px-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] rounded-2xl flex flex-col items-center justify-center gap-1 border border-red-200 transition-colors cursor-pointer animate-pulse"
-                title="Emergency SOS"
-              >
-                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                <span className="truncate">SOS</span>
-              </button>
-            </div>
-
-            {/* Secondary Controls: Safety Shield & Cancel Ride */}
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSafetyOpen(true);
-                  triggerSound('beep');
-                }}
-                className="flex-1 min-h-[42px] py-2 px-3 bg-[#FAF8F5] hover:bg-[#F0EEEA] text-neutral-700 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-neutral-200 transition-colors cursor-pointer"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span className="truncate">Safety Center</span>
-              </button>
-
-              {activeRide.status !== 'in_progress' && (
-                <button
-                  type="button"
-                  onClick={() => cancelRide('Passenger requested cancellation')}
-                  className="min-h-[42px] py-2 px-3 bg-[#FEE2E2] hover:bg-[#FECACA] text-[#DC2626] font-semibold text-xs rounded-xl transition-colors cursor-pointer"
-                >
-                  Cancel Ride
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Status 3: Ride Completed & Rating / Receipt */}
-      {activeRide && activeRide.status === 'completed' && (
-        <div className="bg-white rounded-3xl p-5 shadow-xs border border-[#EDE8E0] space-y-4 animate-in fade-in duration-300">
-          <div className="text-center space-y-1">
-            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-2 shadow-2xs">
-              <Check className="w-6 h-6 stroke-[3]" />
-            </div>
-            <h3 className="font-extrabold text-base text-[#111111]">Trip Completed!</h3>
-            <p className="text-xs text-neutral-500">
-              Total fare of <strong className="text-[#111111]">₹{activeRide.totalFare}</strong> settled via {activeRide.paymentMethod.toUpperCase()}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setReceiptRideData(activeRide);
-                setIsReceiptOpen(true);
-                triggerSound('beep');
-              }}
-              className="py-2.5 px-3 bg-[#FAF8F5] hover:bg-[#F2ECE1] text-[#111111] font-bold text-xs rounded-2xl border border-neutral-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <FileText className="w-3.5 h-3.5 text-[#FF6B2C]" />
-              <span>Tax Receipt</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setIsRatingOpen(true);
-                triggerSound('beep');
-              }}
-              className="py-2.5 px-3 bg-[#FFF4ED] hover:bg-[#FFE5D3] text-[#C8622A] font-bold text-xs rounded-2xl border border-[#FFD8C2] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Star className="w-3.5 h-3.5 fill-[#FF6B2C] text-[#FF6B2C]" />
-              <span>Rate Captain</span>
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              cancelRide('Completed and reset');
-              triggerSound('success');
-            }}
-            className="w-full py-3 bg-[#111111] hover:bg-black text-white font-bold text-xs rounded-2xl shadow-xs transition-colors cursor-pointer"
-          >
-            Book Next Ride
-          </button>
-        </div>
-      )}
         </>
       )}
 
       {/* MODALS SUITE */}
+
+      {/* Full-Screen Mobile-Optimized Location Search Modal */}
+      <FullScreenLocationSearchModal
+        isOpen={isFullScreenSearchOpen}
+        onClose={() => setIsFullScreenSearchOpen(false)}
+        pickup={pickup}
+        dropoff={dropoff}
+        onSelectPickup={(point) => setPickup(point)}
+        onSelectDropoff={(point) => setDropoff(point)}
+        userGpsPoint={gpsState.lat && gpsState.lng ? {
+          lat: gpsState.lat,
+          lng: gpsState.lng,
+          address: gpsState.address,
+          name: gpsState.name
+        } : null}
+        onUseLiveGps={handleApplyCurrentGpsToPickup}
+        savedPlaces={savedPlaces}
+        triggerSound={triggerSound}
+      />
 
       {/* 1. Wallet Modal */}
       <WalletModal

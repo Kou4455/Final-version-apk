@@ -366,22 +366,33 @@ export const DriverProfilePage: React.FC<DriverProfilePageProps> = ({ onNavigate
 
       {/* Sign Out Confirmation Modal */}
       {showLogoutConfirm && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-neutral-200 animate-in fade-in zoom-in-95 duration-200 space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto border border-red-100">
-              <LogOut className="w-6 h-6" />
+        <div 
+          id="driver-logout-modal-backdrop"
+          className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-3 sm:p-4 pb-6 sm:pb-4 animate-in fade-in duration-200"
+          onClick={() => setShowLogoutConfirm(false)}
+        >
+          <div 
+            id="driver-logout-modal"
+            className="bg-white w-full max-w-sm sm:max-w-md rounded-3xl p-5 sm:p-6 shadow-2xl border border-neutral-200 animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-150 mb-2 sm:mb-0 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Mobile Bottom Sheet Pull Indicator */}
+            <div className="w-10 h-1 rounded-full bg-neutral-200 mx-auto -mt-1 mb-2 sm:hidden" />
+
+            <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto border border-red-100 shadow-2xs">
+              <LogOut className="w-6 h-6 sm:w-7 sm:h-7" />
             </div>
             <div className="text-center space-y-1">
-              <h3 className="text-lg font-black text-neutral-900">Sign Out of Captain Mode?</h3>
-              <p className="text-xs text-neutral-500">
+              <h3 className="text-lg sm:text-xl font-black text-neutral-900 tracking-tight">Sign Out of Captain Mode?</h3>
+              <p className="text-xs sm:text-sm text-neutral-500 max-w-xs mx-auto px-1 leading-relaxed">
                 You will go offline and will not receive any passenger ride alerts until you sign back in.
               </p>
             </div>
-            <div className="flex gap-2.5 pt-2">
+            <div className="flex gap-2.5 sm:gap-3 pt-1.5">
               <button
                 type="button"
                 onClick={() => setShowLogoutConfirm(false)}
-                className="flex-1 py-3 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs transition-colors cursor-pointer"
+                className="flex-1 py-3 sm:py-3.5 rounded-2xl bg-neutral-100 hover:bg-neutral-200 active:scale-95 text-neutral-700 font-bold text-xs sm:text-sm transition-all cursor-pointer text-center"
               >
                 Stay Online
               </button>
@@ -392,9 +403,10 @@ export const DriverProfilePage: React.FC<DriverProfilePageProps> = ({ onNavigate
                   logoutDriver();
                   triggerSound('beep');
                 }}
-                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs"
+                className="flex-1 py-3 sm:py-3.5 rounded-2xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs sm:text-sm transition-all cursor-pointer shadow-xs shadow-red-200 text-center flex items-center justify-center gap-1.5"
               >
-                Yes, Sign Out
+                <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span>Yes, Sign Out</span>
               </button>
             </div>
           </div>

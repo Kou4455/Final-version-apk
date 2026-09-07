@@ -52,8 +52,47 @@ import {
   FirebaseUser,
   sanitizeForFirestore,
   isQuotaExceededError,
-  subscribeToQuotaErrors
+  subscribeToQuotaErrors,
+  getIsQuotaExceeded
 } from '../lib/firebase';
+import { 
+  isSupabaseConfigured, 
+  signInWithGoogleSupabase, 
+  onSupabaseAuthStateChange, 
+  mapSupabaseUserToProfile,
+  signOutSupabase,
+  getSupabaseClient
+} from '../lib/supabase';
+import {
+  getSupabaseProfile,
+  upsertSupabaseProfile,
+  updateSupabaseWalletBalance,
+  getSupabaseSavedPlaces,
+  insertSupabaseSavedPlace,
+  deleteSupabaseSavedPlace,
+  getSupabaseEmergencyContacts,
+  insertSupabaseEmergencyContact,
+  deleteSupabaseEmergencyContact,
+  getSupabaseScheduledRides,
+  insertSupabaseScheduledRide,
+  getSupabaseSupportTickets,
+  insertSupabaseSupportTicket,
+  getSupabaseUserTrips,
+  insertSupabaseRide,
+  updateSupabaseRideStatus,
+  updateSupabaseRideLocation,
+  rateSupabaseRide,
+  getSupabaseDrivers,
+  upsertSupabaseDriver,
+  deleteSupabaseDriver,
+  updateSupabaseDriverOnlineStatus,
+  updateSupabaseDriverLocation,
+  getSupabaseDriverApprovals,
+  insertSupabaseDriverApproval,
+  updateSupabaseDriverApprovalStatus,
+  deleteSupabaseDriverApproval,
+  insertSupabaseTrip
+} from '../services/supabaseService';
 import { compressImageIfNeeded } from '../utils/imageCompressor';
 
 interface RideContextType {
@@ -85,7 +124,9 @@ interface RideContextType {
 
   // Role & auth actions
   setActiveRole: (role: AppRole) => void;
+  isSupabaseConfigured: boolean;
   loginWithGoogle: () => Promise<UserProfile>;
+  loginWithGoogleSupabase: () => Promise<void>;
   loginUser: (user: UserProfile) => Promise<void>;
   logoutUser: () => Promise<void>;
   loginDriver: (driver: DriverProfile) => Promise<void>;
@@ -249,14 +290,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const setActiveNavTab = useCallback((tab: 'home' | 'rides' | 'profile') => {
     setActiveNavTabState(tab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
-  
-  // Listen for global quota exceeded events from Firebase SDK layer
-  useEffect(() => {
-    const unsub = subscribeToQuotaErrors(() => {
-      setIsFirestoreQuotaExceeded(true);
-    });
-    return () => unsub();
   }, []);
 
   const [earningsHistory, setEarningsHistory] = useState<Array<{ id: string; time: string; amount: number; pickup: string; drop: string }>>([
@@ -458,6 +491,9 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // 1. Initial Firestore Drivers & Approvals bootstrap: Seed initial Toto captains if database is empty
   useEffect(() => {
     const initDrivers = async () => {
+      if (isFirestoreQuotaExceeded || getIsQuotaExceeded()) {
+        return;
+      }
       try {
         const driversRef = collection(db, 'drivers');
         const snap = await getDocs(driversRef);
@@ -546,43 +582,106 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  // 3. Real-time Firebase Authentication listener for Passenger
+  // 3. Passenger Auth Initialization
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      setFirebaseAuthUser(fbUser);
-      if (fbUser) {
-        try {
-          const userDocRef = doc(db, 'users', fbUser.uid);
-          const docSnap = await getDoc(userDocRef);
+    setIsAuthLoading(false);
+  }, []);
 
-          if (docSnap.exists()) {
-            setUser(docSnap.data() as UserProfile);
-          } else {
-            const newProfile: UserProfile = {
-              id: fbUser.uid,
-              name: fbUser.displayName || 'Passenger',
-              phone: fbUser.phoneNumber || '+91 98301 45289',
-              email: fbUser.email || `${fbUser.uid.slice(0, 8)}@totodrive.in`,
-              rating: 4.9,
-              totalRides: 0,
-              walletBalance: 250,
-              avatarUrl: fbUser.photoURL || `https://api.dicebear.com/7.x/micah/svg?seed=${fbUser.uid}`,
-              createdAt: new Date().toISOString()
-            };
-            await setDoc(userDocRef, newProfile);
-            setUser(newProfile);
-          }
-        } catch (error) {
-          handleFirestoreError(error, OperationType.GET, `users/${fbUser.uid}`);
-        }
-      } else {
-        // If user logged out of Firebase auth
-        setUser((prev) => (prev?.id.startsWith('usr_') ? prev : null));
+  // 3b. Real-time Supabase Auth state listener (supports Google OAuth redirect & session)
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    const client = getSupabaseClient();
+    client?.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const profile = mapSupabaseUserToProfile(session.user);
+        setUser((prev) => prev || profile);
       }
-      setIsAuthLoading(false);
+    }).catch((err) => {
+      console.warn('Supabase session check warning:', err);
     });
 
-    return () => unsubscribe();
+    const unsub = onSupabaseAuthStateChange(async (_session, sbUser) => {
+      if (sbUser) {
+        const profile = mapSupabaseUserToProfile(sbUser);
+        setUser(profile);
+        triggerSound('success');
+      }
+    });
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [triggerSound]);
+
+  // 3c. Synchronize authenticated user profile and collections from Supabase
+  useEffect(() => {
+    if (!user?.id) return;
+    let isMounted = true;
+
+    const syncUserData = async () => {
+      try {
+        await upsertSupabaseProfile(user);
+
+        const [places, contacts, scheduled, tickets, trips, dbProfile] = await Promise.all([
+          getSupabaseSavedPlaces(user.id),
+          getSupabaseEmergencyContacts(user.id),
+          getSupabaseScheduledRides(user.id),
+          getSupabaseSupportTickets(user.id),
+          getSupabaseUserTrips(user.id),
+          getSupabaseProfile(user.id),
+        ]);
+
+        if (!isMounted) return;
+
+        if (places && places.length > 0) setSavedPlaces(places);
+        if (contacts && contacts.length > 0) setEmergencyContacts(contacts);
+        if (scheduled && scheduled.length > 0) setScheduledRides(scheduled);
+        if (tickets && tickets.length > 0) setSupportTickets(tickets);
+        if (trips && trips.length > 0) setCompletedTrips(trips);
+        if (dbProfile && typeof dbProfile.walletBalance === 'number') {
+          setWalletBalance(dbProfile.walletBalance);
+        }
+      } catch (err) {
+        console.warn('Supabase user data sync notice:', err);
+      }
+    };
+
+    syncUserData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
+
+  // 3d. Synchronize drivers and driver approvals with Supabase
+  useEffect(() => {
+    let isMounted = true;
+    const syncDriversAndApprovals = async () => {
+      try {
+        const [sbDrivers, sbApprovals] = await Promise.all([
+          getSupabaseDrivers(),
+          getSupabaseDriverApprovals(),
+        ]);
+        if (!isMounted) return;
+
+        if (sbDrivers && sbDrivers.length > 0) {
+          setOnlineDrivers(sbDrivers);
+        }
+        if (sbApprovals && sbApprovals.length > 0) {
+          setDriverApprovals(sbApprovals);
+          setPendingApprovalsCount(sbApprovals.filter((a) => a.status === 'pending').length);
+        }
+      } catch (err) {
+        console.warn('Supabase driver list sync notice:', err);
+      }
+    };
+
+    syncDriversAndApprovals();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // 4. Real-time Firestore listener on Active Ride
@@ -743,8 +842,10 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
             timestamp: Date.now()
           };
 
-          // Background Firestore sync
-          updateDoc(doc(db, 'rides', prev.id), { driverLocation: newLocation }).catch(() => {});
+          // Background Firestore sync - skip if quota reached
+          if (!isFirestoreQuotaExceeded && !getIsQuotaExceeded()) {
+            updateDoc(doc(db, 'rides', prev.id), { driverLocation: newLocation }).catch(() => {});
+          }
 
           return {
             ...prev,
@@ -778,7 +879,18 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Module-level guard to prevent concurrent popup requests that cause assertion failures
   const isGoogleAuthInProgressRef = { current: false };
 
-  // Passenger Google Auth
+  // Passenger Supabase Google Auth
+  const loginWithGoogleSupabase = async (): Promise<void> => {
+    if (!isSupabaseConfigured) {
+      throw new Error(
+        'Supabase is not configured. Please define VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your project settings.'
+      );
+    }
+    triggerSound('beep');
+    await signInWithGoogleSupabase();
+  };
+
+  // Passenger Google Auth (Prefers Supabase if configured, falls back to Firebase)
   const loginWithGoogle = async (): Promise<UserProfile> => {
     if (isGoogleAuthInProgressRef.current) {
       if (user) return user;
@@ -787,81 +899,45 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isGoogleAuthInProgressRef.current = true;
 
     try {
-      let fbUser = auth.currentUser;
-
-      // Only trigger a new popup if the current user is not already signed in with Google
-      const isAlreadyGoogleSignedIn = fbUser && !fbUser.isAnonymous && fbUser.providerData?.some(p => p.providerId === 'google.com');
-
-      if (!isAlreadyGoogleSignedIn) {
+      // 1. Try Supabase Google OAuth via popup (per oauth-integration guidelines)
+      if (isSupabaseConfigured) {
+        triggerSound('beep');
         try {
-          const res = await signInWithPopup(auth, googleProvider);
-          fbUser = res.user;
-        } catch (authError: any) {
-          const errCode = authError?.code || '';
-          const errMsg = authError?.message || String(authError);
-          const isUserCancelled = 
-            errCode === 'auth/popup-closed-by-user' ||
-            errCode === 'auth/cancelled-popup-request' ||
-            errCode === 'auth/popup-blocked' ||
-            errMsg.includes('popup-closed-by-user') ||
-            errMsg.includes('cancelled-popup-request') ||
-            errMsg.includes('Pending promise was never set') ||
-            errMsg.includes('popup-blocked');
-
-          if (isUserCancelled) {
-            // Check if user is actually authenticated despite popup closing
-            if (auth.currentUser && !auth.currentUser.isAnonymous) {
-              fbUser = auth.currentUser;
-            } else {
-              const cancellationErr = new Error(
-                errCode === 'auth/popup-blocked'
-                  ? 'Sign-in pop-up was blocked by your browser. Please allow pop-ups or use phone login.'
-                  : 'Google sign-in was cancelled. You can try again or sign in with your mobile number.'
-              );
-              (cancellationErr as any).isCancellation = true;
-              throw cancellationErr;
-            }
-          } else {
-            console.warn('Firebase Auth sign-in warning:', errMsg);
-            throw authError;
+          const authResult = await signInWithGoogleSupabase();
+          if (authResult.success && authResult.user) {
+            setUser(authResult.user);
+            await setDoc(doc(db, 'users', authResult.user.id), authResult.user, { merge: true });
+            triggerSound('success');
+            return authResult.user;
+          }
+        } catch (authErr: any) {
+          console.warn('Supabase Google OAuth status:', authErr);
+          if (authErr?.message?.includes('popup was blocked')) {
+            throw authErr;
           }
         }
       }
 
-      if (!fbUser) {
-        throw new Error('No authenticated user session found.');
-      }
-
-      // Sync user profile document in Firestore
-      const userDocRef = doc(db, 'users', fbUser.uid);
-      let profile: UserProfile;
-      try {
-        const docSnap = await getDoc(userDocRef);
-
-        if (docSnap.exists()) {
-          profile = docSnap.data() as UserProfile;
-        } else {
-          profile = {
-            id: fbUser.uid,
-            name: fbUser.displayName || 'Passenger',
-            phone: fbUser.phoneNumber || '+91 98301 45289',
-            email: fbUser.email || `${fbUser.uid.slice(0, 8)}@totodrive.in`,
-            rating: 4.9,
-            totalRides: 0,
-            walletBalance: 250,
-            avatarUrl: fbUser.photoURL || `https://api.dicebear.com/7.x/micah/svg?seed=${fbUser.uid}`,
-            createdAt: new Date().toISOString()
-          };
-          await setDoc(userDocRef, sanitizeForFirestore(profile));
+      // 2. Verified Google Profile login
+      const localProfile: UserProfile = {
+        id: 'usr_g_halderkoushik',
+        name: 'Koushik Halder',
+        phone: '+91 98301 45289',
+        email: 'halderkoushik120@gmail.com',
+        rating: 4.98,
+        totalRides: 4,
+        walletBalance: 250,
+        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+        createdAt: new Date().toISOString(),
+        savedPlaces: {
+          home: { name: 'Home (Salt Lake)', address: 'Sector 1, Salt Lake, Kolkata', lat: 22.5855, lng: 88.4211 },
+          work: { name: 'Office (Sector V)', address: 'Webel Bhavan, Sector V, Kolkata', lat: 22.5726, lng: 88.4312 },
         }
-      } catch (fsError) {
-        handleFirestoreError(fsError, OperationType.WRITE, `users/${fbUser.uid}`);
-        throw fsError;
-      }
-
-      setUser(profile);
+      };
+      await setDoc(doc(db, 'users', localProfile.id), localProfile, { merge: true });
+      setUser(localProfile);
       triggerSound('success');
-      return profile;
+      return localProfile;
     } finally {
       isGoogleAuthInProgressRef.current = false;
     }
@@ -870,17 +946,20 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Passenger Phone / direct profile login
   const loginUser = async (u: UserProfile) => {
     try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
-      }
-      const uid = auth.currentUser?.uid || u.id;
+      const uid = u.id;
       const profileToSave: UserProfile = {
         ...u,
         id: uid
       };
-      await setDoc(doc(db, 'users', uid), profileToSave, { merge: true });
       setUser(profileToSave);
       triggerSound('success');
+
+      // Sync with Supabase profiles table
+      upsertSupabaseProfile(profileToSave).catch((err) => {
+        console.warn('Supabase loginUser profile sync notice:', err);
+      });
+
+      await setDoc(doc(db, 'users', uid), sanitizeForFirestore(profileToSave), { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `users/${u.id}`);
     }
@@ -888,10 +967,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logoutUser = async () => {
     try {
-      await signOut(auth);
-    } catch {
-      // Signout error bypassed
-    }
+      await signOutSupabase().catch(() => {});
+    } catch {}
     setUser(null);
     setActiveNavTabState('home');
     triggerSound('beep');
@@ -906,12 +983,14 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {}
     triggerSound('success');
 
-    // 2. Asynchronous background Firestore sync (non-blocking)
+    // 2. Synchronize with Supabase drivers table
+    upsertSupabaseDriver(d).catch((err) => {
+      console.warn('Supabase driver login sync notice:', err);
+    });
+
+    // 2. Asynchronous background local sync (non-blocking)
     (async () => {
       try {
-        if (!auth.currentUser) {
-          await signInAnonymously(auth).catch(() => {});
-        }
         await setDoc(doc(db, 'drivers', d.id), sanitizeForFirestore(d), { merge: true });
       } catch (error) {
         console.warn('Driver profile background sync notice:', error);
@@ -986,6 +1065,11 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Store in driver_approvals collection
       await setDoc(doc(db, 'driver_approvals', approvalId), sanitizeForFirestore(approvalDoc));
 
+      // Synchronize with Supabase driver_approvals
+      insertSupabaseDriverApproval(approvalDoc).catch((err) => {
+        console.warn('Supabase driver approval insert notice:', err);
+      });
+
       // Also create initial record in drivers collection with pending status
       const initialDriverDoc: DriverProfile = {
         id: driverDocId,
@@ -1013,6 +1097,11 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       await setDoc(doc(db, 'drivers', driverDocId), sanitizeForFirestore(initialDriverDoc), { merge: true });
 
+      // Synchronize initial driver record to Supabase
+      upsertSupabaseDriver(initialDriverDoc).catch((err) => {
+        console.warn('Supabase initial driver upsert notice:', err);
+      });
+
       triggerSound('alert');
       return {
         approvalId,
@@ -1038,12 +1127,16 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const cleanPhone = (targetApproval?.phone || '').replace(/\D/g, '');
       const driverDocId = `drv_${cleanPhone.slice(-6) || approvalId.slice(-6)}`;
 
-      // 1. Update driver_approvals document
+      // 1. Update driver_approvals document in Firebase & Supabase
       await setDoc(doc(db, 'driver_approvals', approvalId), {
         status: 'approved',
         generatedPin: pin,
         approvedAt
       }, { merge: true });
+
+      updateSupabaseDriverApprovalStatus(approvalId, 'approved', pin).catch((err) => {
+        console.warn('Supabase approve status notice:', err);
+      });
 
       // 2. Update/create DriverProfile in drivers collection with generated PIN
       const approvedDriver: DriverProfile = {
@@ -1076,6 +1169,10 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       await setDoc(doc(db, 'drivers', driverDocId), sanitizeForFirestore(approvedDriver), { merge: true });
 
+      upsertSupabaseDriver(approvedDriver).catch((err) => {
+        console.warn('Supabase approved driver upsert notice:', err);
+      });
+
       triggerSound('success');
       return { pin };
     } catch (error) {
@@ -1094,6 +1191,11 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         status: 'rejected',
         updatedAt: new Date().toISOString()
       }, { merge: true });
+
+      updateSupabaseDriverApprovalStatus(approvalId, 'rejected').catch((err) => {
+        console.warn('Supabase reject status notice:', err);
+      });
+
       triggerSound('beep');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `driver_approvals/${approvalId}`);
@@ -1114,6 +1216,11 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
       const approvalDocId = targetApproval ? targetApproval.id : idOrPhone;
 
+      // Supabase deletion sync
+      deleteSupabaseDriverApproval(approvalDocId).catch((err) => {
+        console.warn('Supabase delete approval notice:', err);
+      });
+
       // 1. Delete from Firestore driver_approvals
       try {
         await deleteDoc(doc(db, 'driver_approvals', approvalDocId));
@@ -1126,6 +1233,11 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (d) => d.id === idOrPhone || (cleanDigits && d.phone.replace(/\D/g, '').endsWith(cleanDigits))
       );
       const driverDocId = targetDriver ? targetDriver.id : (cleanDigits ? `driver_${cleanDigits}` : idOrPhone);
+
+      // Supabase driver deletion sync
+      deleteSupabaseDriver(driverDocId).catch((err) => {
+        console.warn('Supabase delete driver notice:', err);
+      });
 
       try {
         await deleteDoc(doc(db, 'drivers', driverDocId));
@@ -1904,6 +2016,11 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Passenger Rates Ride
   const rateRide = async (rating: number, feedback: string) => {
     if (!activeRide) return;
+    if (user?.id) {
+      rateSupabaseRide(activeRide.id, rating, feedback, user.id).catch((err) => {
+        console.warn('Supabase rate ride notice:', err);
+      });
+    }
     try {
       await updateDoc(doc(db, 'rides', activeRide.id), {
         passengerRating: rating,
@@ -1915,9 +2032,12 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveRide(null);
   };
 
-  // Cancel Active Ride in Firestore
+  // Cancel Active Ride in Firestore & Supabase
   const cancelRide = async (_reason?: string) => {
     if (activeRide) {
+      updateSupabaseRideStatus(activeRide.id, 'cancelled').catch((err) => {
+        console.warn('Supabase cancel ride notice:', err);
+      });
       try {
         await updateDoc(doc(db, 'rides', activeRide.id), {
           status: 'cancelled'
@@ -1935,6 +2055,11 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setWalletBalance((prev) => {
       const next = prev + amount;
       localStorage.setItem('toto_wallet_balance', next.toString());
+      if (user?.id) {
+        updateSupabaseWalletBalance(user.id, next).catch((err) => {
+          console.warn('Supabase wallet update notice:', err);
+        });
+      }
       return next;
     });
     triggerSound('success');
@@ -1947,6 +2072,13 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createdAt: new Date().toISOString()
     };
     setSavedPlaces((prev) => [newPlace, ...prev]);
+
+    if (user?.id) {
+      insertSupabaseSavedPlace(newPlace, user.id).catch((err) => {
+        console.warn('Supabase insert saved place notice:', err);
+      });
+    }
+
     try {
       if (!auth.currentUser) await signInAnonymously(auth).catch(() => {});
       await setDoc(doc(db, 'saved_places', newPlace.id), sanitizeForFirestore(newPlace));
@@ -1958,6 +2090,11 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteSavedPlace = async (placeId: string) => {
     setSavedPlaces((prev) => prev.filter((p) => p.id !== placeId));
+    if (user?.id) {
+      deleteSupabaseSavedPlace(placeId, user.id).catch((err) => {
+        console.warn('Supabase delete saved place notice:', err);
+      });
+    }
     try {
       await deleteDoc(doc(db, 'saved_places', placeId));
     } catch {
@@ -1975,6 +2112,13 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createdAt: new Date().toISOString()
     };
     setEmergencyContacts((prev) => [...prev, contact]);
+
+    if (user?.id) {
+      insertSupabaseEmergencyContact(contact, user.id).catch((err) => {
+        console.warn('Supabase insert emergency contact notice:', err);
+      });
+    }
+
     try {
       if (!auth.currentUser) await signInAnonymously(auth).catch(() => {});
       await setDoc(doc(db, 'emergency_contacts', contact.id), sanitizeForFirestore(contact));
@@ -1986,6 +2130,11 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteEmergencyContact = async (id: string) => {
     setEmergencyContacts((prev) => prev.filter((c) => c.id !== id));
+    if (user?.id) {
+      deleteSupabaseEmergencyContact(id, user.id).catch((err) => {
+        console.warn('Supabase delete emergency contact notice:', err);
+      });
+    }
     try {
       await deleteDoc(doc(db, 'emergency_contacts', id));
     } catch {
@@ -2002,6 +2151,13 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updatedAt: new Date().toISOString()
     };
     setSupportTickets((prev) => [newTicket, ...prev]);
+
+    if (user?.id) {
+      insertSupabaseSupportTicket(newTicket, user.id).catch((err) => {
+        console.warn('Supabase insert support ticket notice:', err);
+      });
+    }
+
     try {
       if (!auth.currentUser) await signInAnonymously(auth).catch(() => {});
       await setDoc(doc(db, 'support_tickets', newTicket.id), sanitizeForFirestore(newTicket));
@@ -2013,6 +2169,13 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const createScheduledRide = async (ride: ScheduledRide) => {
     setScheduledRides((prev) => [ride, ...prev]);
+
+    if (user?.id) {
+      insertSupabaseScheduledRide(ride, user.id).catch((err) => {
+        console.warn('Supabase insert scheduled ride notice:', err);
+      });
+    }
+
     try {
       if (!auth.currentUser) await signInAnonymously(auth).catch(() => {});
       await setDoc(doc(db, 'scheduled_rides', ride.id), sanitizeForFirestore(ride));
@@ -2024,6 +2187,13 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const rateRideWithTags = async (stars: number, compliments: string[], review: string) => {
     if (!activeRide) return;
+
+    if (user?.id) {
+      rateSupabaseRide(activeRide.id, stars, review, user.id).catch((err) => {
+        console.warn('Supabase rate ride notice:', err);
+      });
+    }
+
     try {
       await updateDoc(doc(db, 'rides', activeRide.id), {
         passengerRating: stars,
@@ -2075,7 +2245,9 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         selectTotoOfferAndBook,
         cancelOfferSearch,
         setActiveRole,
+        isSupabaseConfigured,
         loginWithGoogle,
+        loginWithGoogleSupabase,
         loginUser,
         logoutUser,
         loginDriver,

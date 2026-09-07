@@ -220,23 +220,24 @@ export function interpolatePosition(
 }
 
 /**
- * Search places online using OpenStreetMap Nominatim with fast timeout
+ * Search places online across India using OpenStreetMap Nominatim with fast timeout and fallback
  */
 export async function searchPlacesOnline(query: string, userLat?: number, userLng?: number): Promise<GeoPoint[]> {
   if (!query || query.trim().length < 2) return [];
   
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
 
+    // Bias towards user's current city/region without strictly restricting (bounded=0)
     let viewboxParam = '';
     if (userLat && userLng) {
-      const offset = 0.2;
-      viewboxParam = `&viewbox=${userLng - offset},${userLat + offset},${userLng + offset},${userLat - offset}`;
+      const offset = 0.8;
+      viewboxParam = `&viewbox=${userLng - offset},${userLat + offset},${userLng + offset},${userLat - offset}&bounded=0`;
     }
 
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query)}&limit=6&addressdetails=1${viewboxParam}`,
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query)}&countrycodes=in&limit=10&addressdetails=1${viewboxParam}`,
       {
         headers: { 'Accept-Language': 'en' },
         signal: controller.signal
@@ -251,7 +252,7 @@ export async function searchPlacesOnline(query: string, userLat?: number, userLn
           const addr = item.address || {};
           const name = item.name || item.display_name.split(',')[0].trim();
           const road = addr.road || addr.suburb || addr.neighbourhood || '';
-          const city = addr.city || addr.town || addr.state_district || addr.state || '';
+          const city = addr.city || addr.town || addr.state_district || addr.state || 'India';
           const fullAddress = item.display_name.split(',').slice(0, 4).join(',').trim();
 
           return {
@@ -260,7 +261,7 @@ export async function searchPlacesOnline(query: string, userLat?: number, userLn
             landmark: road ? `Near ${road}` : undefined,
             lat: parseFloat(item.lat),
             lng: parseFloat(item.lon),
-            zone: city || item.type || 'Search Result'
+            zone: city || item.type || 'India'
           };
         });
       }

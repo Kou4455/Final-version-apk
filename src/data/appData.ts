@@ -112,6 +112,134 @@ export const POPULAR_LOCATIONS: GeoPoint[] = [
     lat: 22.5675,
     lng: 88.3712,
     zone: 'Railway Terminal'
+  },
+  {
+    name: 'Netaji Subhash Chandra Bose Int Airport (CCU)',
+    address: 'Jessore Road, Dum Dum, Kolkata, West Bengal',
+    landmark: 'Terminal 2 Departure Gate 3',
+    lat: 22.6547,
+    lng: 88.4467,
+    zone: 'Airport Hub'
+  },
+  {
+    name: 'Rajiv Chowk Metro Station (Connaught Place)',
+    address: 'Connaught Place Inner Circle, New Delhi, Delhi',
+    landmark: 'Block B, Central Park Gate 7',
+    lat: 28.6328,
+    lng: 77.2197,
+    zone: 'Delhi Metro Hub'
+  },
+  {
+    name: 'Indira Gandhi International Airport (T3)',
+    address: 'Palam, New Delhi, Delhi 110037',
+    landmark: 'Terminal 3 International & Domestic',
+    lat: 28.5562,
+    lng: 77.1000,
+    zone: 'Airport Hub'
+  },
+  {
+    name: 'Cyber City & DLF Phase 2',
+    address: 'DLF Cyber City, Sector 24, Gurugram, Haryana',
+    landmark: 'Cyber Hub Amphitheatre',
+    lat: 28.4952,
+    lng: 77.0891,
+    zone: 'Tech & IT Hub'
+  },
+  {
+    name: 'Sector 18 Metro & Mall of India',
+    address: 'Sector 18, Noida, Gautam Buddha Nagar, Uttar Pradesh',
+    landmark: 'DLF Mall of India Main Atrium',
+    lat: 28.5708,
+    lng: 77.3218,
+    zone: 'Shopping & Metro'
+  },
+  {
+    name: 'Chhatrapati Shivaji Maharaj Terminus (CSMT)',
+    address: 'Fort, Mumbai, Maharashtra 400001',
+    landmark: 'Opposite BMC Headquarters & Crawford Market',
+    lat: 18.9401,
+    lng: 72.8347,
+    zone: 'Railway & Heritage'
+  },
+  {
+    name: 'Bandra Kurla Complex (BKC)',
+    address: 'G Block, Bandra East, Mumbai, Maharashtra',
+    landmark: 'Jio World Drive & MCA Club',
+    lat: 19.0657,
+    lng: 72.8687,
+    zone: 'Financial & IT'
+  },
+  {
+    name: 'CSMI Airport Terminal 2 (BOM)',
+    address: 'Sahar, Andheri East, Mumbai, Maharashtra',
+    landmark: 'Arrival Gate P4 & Departure Forecourt',
+    lat: 19.0990,
+    lng: 72.8745,
+    zone: 'Airport Hub'
+  },
+  {
+    name: 'Koramangala 5th Block Hub',
+    address: 'Koramangala, Bengaluru, Karnataka 560095',
+    landmark: 'Near Jyoti Nivas College & Forum Mall',
+    lat: 12.9352,
+    lng: 77.6245,
+    zone: 'Startup & Food Hub'
+  },
+  {
+    name: 'MG Road Metro & Brigade Road',
+    address: 'Mahatma Gandhi Road, Bengaluru, Karnataka 560001',
+    landmark: 'Near Church Street Junction & Cauvery Emporium',
+    lat: 12.9756,
+    lng: 77.6066,
+    zone: 'Transit & Shopping'
+  },
+  {
+    name: 'Kempegowda International Airport (BLR)',
+    address: 'KIAL Road, Devanahalli, Bengaluru, Karnataka',
+    landmark: 'Terminal 1 & Terminal 2 Plaza',
+    lat: 13.1986,
+    lng: 77.7066,
+    zone: 'Airport Hub'
+  },
+  {
+    name: 'HITEC City Cyber Towers',
+    address: 'Madhapur, HITEC City, Hyderabad, Telangana',
+    landmark: 'Cyber Towers Quadrangle & Metro Pillar A10',
+    lat: 17.4504,
+    lng: 78.3808,
+    zone: 'IT & Business Hub'
+  },
+  {
+    name: 'Secunderabad Railway Station',
+    address: 'Station Road, Secunderabad, Hyderabad, Telangana',
+    landmark: 'Platform 1 Main Portico & Clock Tower',
+    lat: 17.4344,
+    lng: 78.5013,
+    zone: 'Railway Terminal'
+  },
+  {
+    name: 'Puratchi Thalaivar Dr. MGR Central Station',
+    address: 'Kannappar Thidal, Periyamet, Chennai, Tamil Nadu',
+    landmark: 'Chennai Central Main Gate & Metro Concourse',
+    lat: 13.0827,
+    lng: 80.2707,
+    zone: 'Railway Terminal'
+  },
+  {
+    name: 'Hinjewadi Phase 1 IT Park',
+    address: 'Rajiv Gandhi Infotech Park, Hinjewadi, Pune, Maharashtra',
+    landmark: 'Wipro Circle & Infosys Campus Gate 1',
+    lat: 18.5913,
+    lng: 73.7389,
+    zone: 'IT Park Hub'
+  },
+  {
+    name: 'World Trade Park & Malviya Nagar',
+    address: 'Jawahar Lal Nehru Marg, D-Block, Malviya Nagar, Jaipur, Rajasthan',
+    landmark: 'North Block Entrance & Gaurav Tower Crossing',
+    lat: 26.8543,
+    lng: 75.8053,
+    zone: 'Shopping & Leisure'
   }
 ];
 
