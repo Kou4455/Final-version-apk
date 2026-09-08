@@ -54,6 +54,8 @@ export interface UserProfile {
   walletBalance: number;
   avatarUrl: string;
   createdAt?: string;
+  status?: 'active' | 'blocked';
+  notes?: string;
 }
 
 export interface DriverProfile {
@@ -65,17 +67,21 @@ export interface DriverProfile {
   vehicleModel: string;
   vehicleColor?: string;
   pin?: string; // 4-digit security PIN for one-time driver login
+  accessPin?: string; // PIN alias for fleet table
   approvalStatus?: 'pending' | 'approved' | 'rejected';
   registeredAt?: string;
   approvedAt?: string;
   rating: number;
   totalTrips: number;
+  totalRides?: number; // Trips alias
+  todayRides?: number;
   batteryPercentage: number;
   todayEarnings: number;
   totalEarnings?: number;
   acceptanceRate: number;
   isOnline: boolean;
   avatarUrl: string;
+  photoUrl?: string; // Photo alias
   driverPhoto?: string;
   totoPhoto?: string;
   totoPhotos?: string[];
@@ -85,7 +91,7 @@ export interface DriverProfile {
   heading?: number;
   locationAccuracy?: number;
   lastLocationUpdate?: number | string;
-  availabilityStatus?: 'available' | 'busy' | 'offline';
+  availabilityStatus?: 'available' | 'busy' | 'offline' | 'online';
   currentRideId?: string | null;
   updatedAt?: string;
 }

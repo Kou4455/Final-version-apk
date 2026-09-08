@@ -1,12 +1,6 @@
 import React, { useState } from 'react';
 import { GeoPoint, EmergencyContact } from '../../types';
-import { 
-  db, 
-  collection, 
-  addDoc, 
-  serverTimestamp, 
-  sanitizeForFirestore 
-} from '../../lib/firebase';
+import { appDb } from '../../lib/supabase';
 import { 
   AlertTriangle, 
   PhoneCall, 
@@ -58,14 +52,16 @@ export const SosModal: React.FC<SosModalProps> = ({
   const handleTriggerSosAlert = async () => {
     setSosTriggered(true);
     try {
-      await addDoc(collection(db, 'admin_audit_logs'), sanitizeForFirestore({
+      const logId = `audit_${Date.now()}`;
+      appDb.set('admin_audit_logs', logId, {
+        id: logId,
         adminName: 'EMERGENCY_SYSTEM',
         action: 'SOS_TRIGGERED',
         targetType: 'ride',
         targetId: rideId,
         timestamp: new Date().toISOString(),
         details: `SOS alert triggered by ${userName} (User: ${userId}) during Ride #${rideId}. Driver: ${driverName || 'N/A'} (${vehicleNumber || 'N/A'}). GPS: ${currentLocation?.lat || 0}, ${currentLocation?.lng || 0}`
-      }));
+      });
     } catch (err) {
       console.debug('SOS event logged locally');
     }

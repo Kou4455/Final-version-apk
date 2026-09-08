@@ -203,10 +203,18 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
                     Verified
                   </span>
                 </div>
-                <p className="text-xs text-neutral-300 flex items-center gap-1.5 mt-0.5">
-                  <Phone className="w-3 h-3 text-neutral-400" />
-                  <span>{user?.phone || '+91 98311 02458'}</span>
-                </p>
+                <div className="flex flex-col gap-0.5 mt-0.5">
+                  <p className="text-xs text-neutral-300 flex items-center gap-1.5">
+                    <Phone className="w-3 h-3 text-neutral-400" />
+                    <span>{user?.phone || '+91 98311 02458'}</span>
+                  </p>
+                  {user?.email && (
+                    <p className="text-[11px] text-neutral-300 flex items-center gap-1.5 truncate">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                      <span className="truncate">{user.email}</span>
+                    </p>
+                  )}
+                </div>
                 <div className="flex items-center gap-2 mt-2 text-[11px] font-medium text-neutral-300">
                   <span className="flex items-center gap-1 bg-white/10 px-2 py-0.5 rounded-full">
                     <Star className="w-3 h-3 text-amber-400 fill-amber-400" />

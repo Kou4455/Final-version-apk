@@ -81,8 +81,8 @@ export const DriverProfilePage: React.FC<DriverProfilePageProps> = ({ onNavigate
         setSaveSuccess(false);
       }, 2500);
     } catch (err) {
-      console.error('Failed to update vehicle details in Firestore:', err);
-      setErrorMsg('Failed to update Firestore document. Please try again.');
+      console.error('Failed to update vehicle details in database:', err);
+      setErrorMsg('Failed to update vehicle details in database. Please try again.');
     } finally {
       setIsSaving(false);
     }

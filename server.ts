@@ -13,128 +13,76 @@ async function startServer() {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Supabase Status & Todos endpoints
-  app.get("/api/supabase/status", (req, res) => {
-    res.json({
-      status: "connected",
-      url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
-      hasPublishableKey: Boolean(
-        process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY
-      ),
-      hasSecretKey: Boolean(process.env.SUPABASE_SECRET_KEY),
-      jwksUrl:
-        process.env.SUPABASE_JWKS_URL ||
-        "https://qjbbykgskirtoewkvgto.supabase.co/auth/v1/.well-known/jwks.json",
-    });
-  });
-
-  app.get("/api/todos", async (req, res) => {
-    try {
-      const { serverSupabase } = await import("./server/supabase");
-      const { data, error } = await serverSupabase.from("todos").select();
-      if (error) {
-        res.status(500).json({ error: error.message });
-        return;
+  // OAuth Callback Handler for Supabase / Google OAuth (Popup communication)
+  app.get(["/auth/callback", "/auth/callback/"], (req, res) => {
+    res.send(`<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Authenticating with Toto Drive...</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #FAF8F5;
+        color: #111111;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
       }
-      res.json(data || []);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to fetch todos" });
-    }
-  });
-
-  // Verify if Supabase Google OAuth provider is actively enabled in Supabase
-  app.get("/api/auth/google/check", async (req, res) => {
-    try {
-      const supabaseUrl =
-        process.env.SUPABASE_URL ||
-        process.env.VITE_SUPABASE_URL ||
-        "https://qjbbykgskirtoewkvgto.supabase.co";
-      const checkUrl = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(
-        "https://localhost:3000/auth/callback"
-      )}`;
-      const response = await fetch(checkUrl, { method: "GET" });
-      if (response.status === 400) {
-        const data: any = await response.json().catch(() => ({}));
-        if (data.msg && data.msg.includes("provider is not enabled")) {
-          res.json({ enabled: false, reason: "provider_not_enabled", message: data.msg });
-          return;
-        }
+      .card {
+        background: #ffffff;
+        border: 1px solid #EDE8E0;
+        border-radius: 16px;
+        padding: 24px 32px;
+        text-align: center;
+        max-width: 340px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.06);
       }
-      res.json({ enabled: response.ok || response.status === 302 || response.status === 303 });
-    } catch (err: any) {
-      res.json({ enabled: false, error: err.message });
-    }
-  });
-
-  // OAuth Popup Callback Handler (per oauth-integration guidelines)
-  app.get("/auth/callback", (req, res) => {
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Authentication Successful</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              min-height: 100vh;
-              margin: 0;
-              background: #faf8f5;
-              color: #111;
-            }
-            .card {
-              text-align: center;
-              padding: 32px 28px;
-              background: white;
-              border-radius: 16px;
-              box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-              max-width: 340px;
-              width: 90%;
-            }
-            .spinner {
-              width: 32px;
-              height: 32px;
-              border: 3px solid #f0eee6;
-              border-top: 3px solid #C8622A;
-              border-radius: 50%;
-              animation: spin 0.8s linear infinite;
-              margin: 0 auto 16px;
-            }
-            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <div class="spinner"></div>
-            <h3 style="margin: 0 0 6px; font-size: 17px; font-weight: 700;">Connecting Account</h3>
-            <p style="margin: 0; color: #666; font-size: 13px;">Signing in with Google and redirecting...</p>
-          </div>
-          <script>
-            try {
-              const fullUrl = window.location.href;
-              const hash = window.location.hash || '';
-              const search = window.location.search || '';
-              if (window.opener) {
-                window.opener.postMessage({
-                  type: 'OAUTH_AUTH_SUCCESS',
-                  hash: hash,
-                  search: search,
-                  url: fullUrl
-                }, '*');
-                setTimeout(() => window.close(), 400);
-              } else {
-                window.location.href = '/';
-              }
-            } catch (e) {
+      .spinner {
+        width: 30px;
+        height: 30px;
+        border: 3px solid #EDE8E0;
+        border-top-color: #E07A00;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin: 0 auto 12px;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="spinner"></div>
+      <h3 style="margin: 0 0 6px; font-size: 15px; font-weight: 700;">Authenticating...</h3>
+      <p style="margin: 0; font-size: 12px; color: #666;">Completing sign-in. This window will close automatically.</p>
+    </div>
+    <script>
+      (function() {
+        try {
+          if (window.opener) {
+            window.opener.postMessage({
+              type: 'SUPABASE_AUTH_CALLBACK',
+              hash: window.location.hash,
+              search: window.location.search,
+              href: window.location.href
+            }, '*');
+            setTimeout(function() {
               window.close();
-            }
-          </script>
-        </body>
-      </html>
-    `);
+            }, 300);
+          } else {
+            window.location.href = '/';
+          }
+        } catch (e) {
+          window.location.href = '/';
+        }
+      })();
+    </script>
+  </body>
+</html>`);
   });
 
   // Real-time Road Routing API proxy

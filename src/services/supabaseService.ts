@@ -926,3 +926,152 @@ export async function checkSupabaseHealth(): Promise<SupabaseHealthReport> {
 
   return report;
 }
+
+// ==============================================================================
+// 10. Admin Direct Database Operations (Users, Rides, Drivers)
+// ==============================================================================
+
+export async function adminGetSupabaseUsers(): Promise<UserProfile[]> {
+  try {
+    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    if (error) {
+      // Fallback try 'users' table
+      const { data: usersData, error: usersErr } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+      if (usersErr) {
+        console.warn('Supabase fetch all users notice:', error.message);
+        return [];
+      }
+      return (usersData || []).map((row) => ({
+        id: row.id,
+        name: row.name || 'Passenger',
+        phone: row.phone || '',
+        email: row.email || '',
+        avatarUrl: row.avatar_url || `https://api.dicebear.com/7.x/micah/svg?seed=${row.id}`,
+        rating: Number(row.rating ?? 4.95),
+        totalRides: Number(row.total_rides ?? 0),
+        walletBalance: Number(row.wallet_balance ?? 0),
+        status: (row.status as 'active' | 'blocked') || 'active',
+        createdAt: row.created_at,
+      }));
+    }
+
+    return (data || []).map((row) => ({
+      id: row.id,
+      name: row.name || 'Passenger',
+      phone: row.phone || '',
+      email: row.email || '',
+      avatarUrl: row.avatar_url || `https://api.dicebear.com/7.x/micah/svg?seed=${row.id}`,
+      rating: Number(row.rating ?? 4.95),
+      totalRides: Number(row.total_rides ?? 0),
+      walletBalance: Number(row.wallet_balance ?? 0),
+      status: (row.status as 'active' | 'blocked') || 'active',
+      createdAt: row.created_at,
+    }));
+  } catch (err) {
+    console.warn('Error in adminGetSupabaseUsers:', err);
+    return [];
+  }
+}
+
+export async function adminUpsertSupabaseUser(user: UserProfile): Promise<void> {
+  try {
+    const payload = {
+      id: user.id,
+      name: user.name,
+      phone: user.phone,
+      email: user.email,
+      avatar_url: user.avatarUrl,
+      rating: user.rating,
+      total_rides: user.totalRides,
+      wallet_balance: user.walletBalance,
+      status: user.status || 'active',
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from('profiles').upsert(payload, { onConflict: 'id' });
+    if (error) {
+      // Also try 'users' table
+      try {
+        await supabase.from('users').upsert(payload, { onConflict: 'id' });
+      } catch {
+        // Non-blocking
+      }
+    }
+  } catch (err) {
+    console.warn('Error in adminUpsertSupabaseUser:', err);
+  }
+}
+
+export async function adminDeleteSupabaseUser(userId: string): Promise<void> {
+  try {
+    await supabase.from('profiles').delete().eq('id', userId);
+    try {
+      await supabase.from('users').delete().eq('id', userId);
+    } catch {
+      // Non-blocking
+    }
+  } catch (err) {
+    console.warn('Error in adminDeleteSupabaseUser:', err);
+  }
+}
+
+export async function adminGetSupabaseRides(): Promise<ActiveRide[]> {
+  try {
+    const { data, error } = await supabase.from('rides').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.warn('Supabase fetch all rides notice:', error.message);
+      return [];
+    }
+
+    return (data || []).map((row) => ({
+      id: row.id,
+      userId: row.user_id || 'usr_unknown',
+      userName: row.user_name || 'Passenger',
+      userPhone: row.user_phone || '',
+      userRating: 4.9,
+      driverId: row.driver_id,
+      driverName: row.driver_name,
+      driverPhone: row.driver_phone,
+      driverPhoto: row.driver_photo,
+      vehicleNumber: row.vehicle_number,
+      vehicleModel: row.vehicle_model,
+      vehicleType: row.vehicle_type || 'toto',
+      pickup: {
+        lat: Number(row.pickup_lat ?? 22.58),
+        lng: Number(row.pickup_lng ?? 88.42),
+        name: row.pickup_name || 'Pickup',
+        address: row.pickup_name || 'Pickup',
+      },
+      dropoff: {
+        lat: Number(row.dropoff_lat ?? 22.59),
+        lng: Number(row.dropoff_lng ?? 88.43),
+        name: row.dropoff_name || 'Destination',
+        address: row.dropoff_name || 'Destination',
+      },
+      distanceKm: Number(row.distance_km ?? 1.5),
+      estimatedMins: Number(row.estimated_mins ?? 8),
+      basePrice: Number(row.fare ?? 30),
+      discount: 0,
+      totalFare: Number(row.fare ?? 30),
+      driverEarnings: Number(row.driver_earnings ?? (row.fare ? Number(row.fare) * 0.9 : 27)),
+      paymentMethod: row.payment_method || 'cash',
+      paymentStatus: row.payment_status || 'paid',
+      status: row.status || 'completed',
+      otp: row.otp || '1234',
+      bookedAt: row.booked_at || row.created_at || new Date().toISOString(),
+      completedAt: row.completed_at,
+    }));
+  } catch (err) {
+    console.warn('Error in adminGetSupabaseRides:', err);
+    return [];
+  }
+}
+
+export async function adminDeleteSupabaseRide(rideId: string): Promise<void> {
+  try {
+    await supabase.from('rides').delete().eq('id', rideId);
+  } catch (err) {
+    console.warn('Error in adminDeleteSupabaseRide:', err);
+  }
+}
+

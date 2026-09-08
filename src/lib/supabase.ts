@@ -1,127 +1,297 @@
-import { SupabaseClient, User as SupabaseUser, Session } from '@supabase/supabase-js';
-import { UserProfile } from '../types';
-import { supabase, getSupabaseClient, isSupabaseConfigured, supabaseConfig } from './supabaseClient';
-
-export { supabase, getSupabaseClient, isSupabaseConfigured, supabaseConfig };
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { supabase as clientFromConfig, formatSupabaseUrl } from '../supabaseClient.js';
+import { 
+  UserProfile, 
+  DriverProfile, 
+  DriverApprovalRequest, 
+  ActiveRide, 
+  TripRecord, 
+  RideRequestDoc, 
+  ChatMsg, 
+  SavedPlaceItem, 
+  EmergencyContact, 
+  SupportTicket, 
+  ScheduledRide 
+} from '../types';
 
 /**
- * Checks if Google OAuth provider is enabled in the Supabase instance
+ * Environment configuration for Supabase with graceful URL validation
  */
-export async function checkGoogleOAuthStatus(): Promise<{ enabled: boolean; reason?: string }> {
-  try {
-    const res = await fetch('/api/auth/google/check');
-    if (res.ok) {
-      const data = await res.json();
-      return data;
-    }
-  } catch (err) {
-    console.debug('Error checking Google OAuth provider status:', err);
+function initSupabase(): { client: SupabaseClient | null; isConfigured: boolean } {
+  const metaEnv = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : ({} as any);
+  const rawUrl = (metaEnv.VITE_SUPABASE_URL || '').trim();
+  const rawKey = (metaEnv.VITE_SUPABASE_ANON_KEY || '').trim();
+
+  if (!rawUrl || !rawKey) {
+    return { client: clientFromConfig || null, isConfigured: false };
   }
-  return { enabled: false };
-}
 
-/**
- * Initiates Google OAuth authentication via Supabase using popup or redirect
- */
-export async function signInWithGoogleSupabase(redirectUrl?: string): Promise<{
-  success: boolean;
-  user?: UserProfile;
-  providerEnabled?: boolean;
-}> {
-  const client = getSupabaseClient();
-  const callbackUrl = redirectUrl || `${window.location.origin}/auth/callback`;
-  const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+  // Reject placeholder values or unset templates
+  if (
+    rawUrl.includes('YOUR_') || 
+    rawUrl.includes('your_') || 
+    rawUrl.startsWith('<') || 
+    rawUrl === 'undefined' ||
+    rawUrl === 'null' ||
+    rawKey.includes('YOUR_')
+  ) {
+    return { client: clientFromConfig || null, isConfigured: false };
+  }
 
   try {
-    const { data, error } = await client.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: callbackUrl,
-        skipBrowserRedirect: isIframe,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'select_account',
-        },
-      },
-    });
-
-    if (error) {
-      console.warn('Google sign-in notification:', error.message);
-      return { success: false, providerEnabled: false };
+    const formattedUrl = formatSupabaseUrl(rawUrl);
+    const parsed = new URL(formattedUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { client: clientFromConfig || null, isConfigured: false };
+    }
+    if (!parsed.hostname || parsed.hostname.length < 3) {
+      return { client: clientFromConfig || null, isConfigured: false };
     }
 
-    if (data?.url) {
-      if (isIframe) {
-        const popup = window.open(
-          data.url,
-          'supabase_google_auth',
-          'width=540,height=680,menubar=no,toolbar=no,status=no'
-        );
-        if (!popup) {
-          throw new Error('Sign-in popup was blocked by your browser. Please allow popups for this site.');
-        }
-      } else {
-        window.location.href = data.url;
-        return { success: true };
-      }
-    }
-
-    return { success: true, providerEnabled: true };
+    const client = clientFromConfig || createClient(formattedUrl, rawKey);
+    return { client, isConfigured: true };
   } catch (err) {
-    console.warn('OAuth attempt result:', err);
-    return { success: false, providerEnabled: false };
+    console.warn('Supabase URL is invalid or unconfigured, running in local-first mode:', err);
+    return { client: clientFromConfig || null, isConfigured: false };
   }
 }
 
+const { client: initializedClient, isConfigured } = initSupabase();
+
 /**
- * Signs out from Supabase Auth
+ * Initialized Supabase client (active when valid environment variables are supplied)
  */
-export async function signOutSupabase(): Promise<void> {
-  const client = getSupabaseClient();
-  await client.auth.signOut().catch(() => {});
+export const supabase: SupabaseClient | null = initializedClient || clientFromConfig;
+export const isSupabaseConfigured: boolean = isConfigured;
+
+/**
+ * Storage keys for reactive local persistence before or alongside Supabase connection
+ */
+export type TableName = 
+  | 'users'
+  | 'drivers'
+  | 'driver_approvals'
+  | 'rides'
+  | 'rideRequests'
+  | 'trips'
+  | 'earnings'
+  | 'chat_messages'
+  | 'admin_audit_logs'
+  | 'saved_places'
+  | 'emergency_contacts'
+  | 'support_tickets'
+  | 'scheduled_rides';
+
+type TableListener<T = any> = (records: T[]) => void;
+const listeners = new Map<TableName, Set<TableListener>>();
+
+function getStorageKey(table: TableName): string {
+  return `toto_${table}`;
 }
 
-/**
- * Maps a Supabase authenticated user to the application's UserProfile format
- */
-export function mapSupabaseUserToProfile(sbUser: SupabaseUser): UserProfile {
-  const metadata = sbUser.user_metadata || {};
-  const fullName = metadata.full_name || metadata.name || metadata.displayName || 'Passenger';
-  const email = sbUser.email || metadata.email || `${sbUser.id.slice(0, 8)}@totodrive.in`;
-  const avatarUrl =
-    metadata.avatar_url ||
-    metadata.picture ||
-    `https://api.dicebear.com/7.x/micah/svg?seed=${sbUser.id}`;
-  const phone = sbUser.phone || metadata.phone || '+91 98301 45289';
-
-  return {
-    id: sbUser.id,
-    name: fullName,
-    phone,
-    email,
-    rating: 4.95,
-    totalRides: 0,
-    walletBalance: 250,
-    avatarUrl,
-    createdAt: sbUser.created_at || new Date().toISOString(),
-    savedPlaces: {},
-  };
+function loadFromStorage<T = any>(table: TableName): Record<string, T> {
+  try {
+    const raw = localStorage.getItem(getStorageKey(table));
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch (err) {
+    console.warn(`Failed to read table ${table} from storage:`, err);
+    return {};
+  }
 }
 
-/**
- * Subscribes to Supabase Auth state changes
- */
-export function onSupabaseAuthStateChange(
-  callback: (session: Session | null, user: SupabaseUser | null) => void
-): () => void {
-  const client = getSupabaseClient();
-  const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
-    callback(session, session?.user || null);
+function saveToStorage<T = any>(table: TableName, data: Record<string, T>): void {
+  try {
+    localStorage.setItem(getStorageKey(table), JSON.stringify(data));
+  } catch (err) {
+    console.warn(`Failed to write table ${table} to storage:`, err);
+  }
+}
+
+function notifyListeners(table: TableName) {
+  const set = listeners.get(table);
+  if (!set || set.size === 0) return;
+  const list = Object.values(loadFromStorage(table));
+  set.forEach(fn => {
+    try {
+      fn(list);
+    } catch (e) {
+      console.warn(`Error in listener for ${table}:`, e);
+    }
   });
-
-  return () => {
-    subscription.unsubscribe();
-  };
 }
 
-export default supabase;
+/**
+ * Clean data store providing immediate persistence and real-time pub/sub listeners,
+ * matching relational table entities ready to sync with Supabase tables.
+ */
+export const appDb = {
+  get<T = any>(table: TableName, id: string): T | null {
+    const data = loadFromStorage<T>(table);
+    return data[id] || null;
+  },
+
+  getAll<T = any>(table: TableName, filter?: (item: T) => boolean): T[] {
+    const data = loadFromStorage<T>(table);
+    const list = Object.values(data);
+    return filter ? list.filter(filter) : list;
+  },
+
+  set<T extends { id?: string }>(table: TableName, id: string, item: T): void {
+    const data = loadFromStorage<T>(table);
+    data[id] = { ...item, id };
+    saveToStorage(table, data);
+    notifyListeners(table);
+
+    // If Supabase is connected, sync asynchronously
+    if (supabase) {
+      Promise.resolve(supabase.from(table).upsert({ ...(item as any), id })).catch((err) => {
+        console.debug(`Supabase upsert to ${table} deferred:`, err);
+      });
+    }
+  },
+
+  update<T = any>(table: TableName, id: string, updates: Partial<T>): T | null {
+    const data = loadFromStorage<T>(table);
+    if (!data[id]) {
+      // Create if it doesn't exist
+      data[id] = { id, ...updates } as T;
+    } else {
+      data[id] = { ...data[id], ...updates };
+    }
+    saveToStorage(table, data);
+    notifyListeners(table);
+
+    if (supabase) {
+      Promise.resolve(supabase.from(table).update(updates as any).eq('id', id)).catch((err) => {
+        console.debug(`Supabase update to ${table} deferred:`, err);
+      });
+    }
+    return data[id];
+  },
+
+  delete(table: TableName, id: string): boolean {
+    const data = loadFromStorage(table);
+    if (data[id]) {
+      delete data[id];
+      saveToStorage(table, data);
+      notifyListeners(table);
+
+      if (supabase) {
+        Promise.resolve(supabase.from(table).delete().eq('id', id)).catch((err) => {
+          console.debug(`Supabase delete from ${table} deferred:`, err);
+        });
+      }
+      return true;
+    }
+    return false;
+  },
+
+  subscribe<T = any>(table: TableName, callback: TableListener<T>): () => void {
+    if (!listeners.has(table)) {
+      listeners.set(table, new Set());
+    }
+    listeners.get(table)!.add(callback);
+
+    // Immediately invoke with current records
+    const initial = Object.values(loadFromStorage<T>(table));
+    try {
+      callback(initial);
+    } catch (e) {
+      console.warn(`Initial callback error for ${table}:`, e);
+    }
+
+    return () => {
+      listeners.get(table)?.delete(callback);
+    };
+  }
+};
+
+/**
+ * Ready-to-use Supabase SQL Schema for database initialization
+ */
+export const SUPABASE_SQL_SCHEMA = `
+-- Create Toto Drive tables for Supabase
+
+create table if not exists users (
+  id text primary key,
+  name text not null,
+  phone text not null,
+  email text,
+  rating numeric default 5.0,
+  total_rides integer default 0,
+  wallet_balance numeric default 0,
+  avatar_url text,
+  created_at timestamptz default now()
+);
+
+create table if not exists drivers (
+  id text primary key,
+  name text not null,
+  phone text not null,
+  pin text not null,
+  status text not null,
+  vehicle_number text not null,
+  vehicle_type text not null,
+  rating numeric default 4.8,
+  total_rides integer default 0,
+  earnings numeric default 0,
+  is_online boolean default false,
+  is_verified boolean default false,
+  current_location jsonb,
+  created_at timestamptz default now()
+);
+
+create table if not exists driver_approvals (
+  id text primary key,
+  name text not null,
+  phone text not null,
+  vehicle_number text not null,
+  vehicle_type text not null,
+  status text not null default 'pending',
+  applied_date text not null,
+  experience text,
+  license_photo text,
+  aadhaar_photo text,
+  vehicle_photo text
+);
+
+create table if not exists rides (
+  id text primary key,
+  user_id text not null,
+  user_name text not null,
+  user_phone text not null,
+  driver_id text,
+  driver_name text,
+  status text not null,
+  pickup jsonb not null,
+  destination jsonb not null,
+  fare numeric not null,
+  otp text not null,
+  created_at timestamptz default now()
+);
+
+create table if not exists trips (
+  id text primary key,
+  driver_id text not null,
+  driver_name text,
+  user_name text,
+  fare numeric not null,
+  pickup jsonb,
+  destination jsonb,
+  distance_km numeric,
+  completed_at timestamptz default now()
+);
+
+create table if not exists chat_messages (
+  id text primary key,
+  ride_id text not null,
+  sender_id text not null,
+  sender_name text not null,
+  sender_role text not null,
+  text text not null,
+  timestamp text not null,
+  read boolean default false,
+  created_at timestamptz default now()
+);
+`;

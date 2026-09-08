@@ -29,71 +29,20 @@ import {
   fetchRouteBetweenPoints, 
   isDriverLocationFresh 
 } from '../utils/geoUtils';
-import { 
-  auth, 
-  db, 
-  googleProvider,
-  signInWithPopup, 
-  signOut, 
-  signInAnonymously,
-  onAuthStateChanged,
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc,
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  getDocs,
-  handleFirestoreError,
-  OperationType,
-  FirebaseUser,
-  sanitizeForFirestore,
-  isQuotaExceededError,
-  subscribeToQuotaErrors,
-  getIsQuotaExceeded
-} from '../lib/firebase';
-import { 
-  isSupabaseConfigured, 
-  signInWithGoogleSupabase, 
-  onSupabaseAuthStateChange, 
-  mapSupabaseUserToProfile,
-  signOutSupabase,
-  getSupabaseClient
-} from '../lib/supabase';
-import {
-  getSupabaseProfile,
-  upsertSupabaseProfile,
-  updateSupabaseWalletBalance,
-  getSupabaseSavedPlaces,
-  insertSupabaseSavedPlace,
-  deleteSupabaseSavedPlace,
-  getSupabaseEmergencyContacts,
-  insertSupabaseEmergencyContact,
-  deleteSupabaseEmergencyContact,
-  getSupabaseScheduledRides,
-  insertSupabaseScheduledRide,
-  getSupabaseSupportTickets,
-  insertSupabaseSupportTicket,
-  getSupabaseUserTrips,
-  insertSupabaseRide,
-  updateSupabaseRideStatus,
-  updateSupabaseRideLocation,
-  rateSupabaseRide,
-  getSupabaseDrivers,
-  upsertSupabaseDriver,
-  deleteSupabaseDriver,
-  updateSupabaseDriverOnlineStatus,
-  updateSupabaseDriverLocation,
-  getSupabaseDriverApprovals,
-  insertSupabaseDriverApproval,
-  updateSupabaseDriverApprovalStatus,
-  deleteSupabaseDriverApproval,
-  insertSupabaseTrip
-} from '../services/supabaseService';
+import { appDb, supabase, isSupabaseConfigured } from '../lib/supabase';
+import { auth, logOutFromFirebase } from '../services/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { compressImageIfNeeded } from '../utils/imageCompressor';
+import { 
+  upsertSupabaseProfile,
+  adminGetSupabaseUsers,
+  adminUpsertSupabaseUser,
+  adminDeleteSupabaseUser,
+  adminGetSupabaseRides,
+  adminDeleteSupabaseRide,
+  upsertSupabaseDriver,
+  deleteSupabaseDriver
+} from '../services/supabaseService';
 
 interface RideContextType {
   user: UserProfile | null;
@@ -105,9 +54,8 @@ interface RideContextType {
   earningsHistory: Array<{ id: string; time: string; amount: number; pickup: string; drop: string }>;
   userGpsPoint: GeoPoint | null;
   driverGpsPoint: GeoPoint | null;
-  firebaseAuthUser: FirebaseUser | null;
   isAuthLoading: boolean;
-  isFirestoreQuotaExceeded: boolean;
+  isSupabaseConnected: boolean;
   
   // Dynamic Online Toto Partner Offers
   availableTotoOffers: TotoPartnerOffer[];
@@ -124,9 +72,6 @@ interface RideContextType {
 
   // Role & auth actions
   setActiveRole: (role: AppRole) => void;
-  isSupabaseConfigured: boolean;
-  loginWithGoogle: () => Promise<UserProfile>;
-  loginWithGoogleSupabase: () => Promise<void>;
   loginUser: (user: UserProfile) => Promise<void>;
   logoutUser: () => Promise<void>;
   loginDriver: (driver: DriverProfile) => Promise<void>;
@@ -205,6 +150,22 @@ interface RideContextType {
   updateAdminCredentials: (newUsername: string, newPassword: string, currentPassword?: string) => { success: boolean; message: string };
   updateAdminPassword: (newPassword: string) => { success: boolean; message: string };
 
+  // Supabase Database collections & management
+  allUsers: UserProfile[];
+  allRides: ActiveRide[];
+  allDrivers: DriverProfile[];
+  updateUserProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  adminUpdateUser: (userId: string, updates: Partial<UserProfile>) => Promise<void>;
+  adminCreateUser: (user: Omit<UserProfile, 'id'> & { id?: string }) => Promise<UserProfile>;
+  adminDeleteUser: (userId: string) => Promise<void>;
+  adminAdjustUserWallet: (userId: string, amount: number, note?: string) => Promise<void>;
+  adminToggleUserStatus: (userId: string) => Promise<void>;
+  adminUpdateRide: (rideId: string, updates: Partial<ActiveRide>) => Promise<void>;
+  adminCreateRide: (rideData: Partial<ActiveRide>) => Promise<ActiveRide>;
+  adminDeleteRide: (rideId: string) => Promise<void>;
+  adminUpdateDriver: (driverId: string, updates: Partial<DriverProfile>) => Promise<void>;
+  adminCreateDriver: (driverData: Partial<DriverProfile>) => Promise<DriverProfile>;
+
   // Audio chime feedback
   triggerSound: (type: 'beep' | 'success' | 'alert') => void;
 }
@@ -261,7 +222,17 @@ function playChime(type: 'beep' | 'success' | 'alert') {
 }
 
 export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(() => {
+    try {
+      const saved = localStorage.getItem('toto_saved_user');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn('Error reading saved user:', e);
+    }
+    return null;
+  });
   const [driver, setDriver] = useState<DriverProfile | null>(() => {
     try {
       const saved = localStorage.getItem('toto_saved_driver');
@@ -273,7 +244,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     return null; // By default require captain sign-in / PIN authentication
   });
-  const [firebaseAuthUser, setFirebaseAuthUser] = useState<FirebaseUser | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [activeRole, setActiveRole] = useState<AppRole>('user');
   const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
@@ -284,13 +254,12 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [availableTotoOffers, setAvailableTotoOffers] = useState<TotoPartnerOffer[]>([]);
   const [isScanningOffers, setIsScanningOffers] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState<TotoPartnerOffer | null>(null);
-  const [isFirestoreQuotaExceeded, setIsFirestoreQuotaExceeded] = useState<boolean>(false);
   const [activeNavTab, setActiveNavTabState] = useState<'home' | 'rides' | 'profile'>('home');
-
   const setActiveNavTab = useCallback((tab: 'home' | 'rides' | 'profile') => {
     setActiveNavTabState(tab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
+  const isSupabaseConnected = isSupabaseConfigured;
 
   const [earningsHistory, setEarningsHistory] = useState<Array<{ id: string; time: string; amount: number; pickup: string; drop: string }>>([
     { id: 'tx_1', time: '10:15 AM', amount: 45, pickup: 'Sector V Metro', drop: 'City Centre 1' },
@@ -484,242 +453,425 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   ]);
 
+  // Full Database Collections
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [allRides, setAllRides] = useState<ActiveRide[]>([]);
+  const [allDrivers, setAllDrivers] = useState<DriverProfile[]>([]);
+
   const triggerSound = useCallback((type: 'beep' | 'success' | 'alert') => {
     playChime(type);
   }, []);
 
-  // 1. Initial Firestore Drivers & Approvals bootstrap: Seed initial Toto captains if database is empty
+  // 1. Initial Drivers, Approvals, Users & Rides bootstrap: Seed if database is empty
   useEffect(() => {
-    const initDrivers = async () => {
-      if (isFirestoreQuotaExceeded || getIsQuotaExceeded()) {
-        return;
+    const existingDrivers = appDb.getAll<DriverProfile>('drivers');
+    if (existingDrivers.length === 0) {
+      for (const d of SEED_DRIVERS) {
+        appDb.set('drivers', d.id, d);
       }
-      try {
-        const driversRef = collection(db, 'drivers');
-        const snap = await getDocs(driversRef);
-        if (snap.empty) {
-          for (const d of SEED_DRIVERS) {
-            await setDoc(doc(db, 'drivers', d.id), d);
-          }
-        }
+    }
 
-        // Seed initial pending approval if collection is empty
-        const apprRef = collection(db, 'driver_approvals');
-        const apprSnap = await getDocs(apprRef);
-        if (apprSnap.empty) {
-          const sampleAppr: DriverApprovalRequest = {
-            id: 'appr_sample_bikram',
-            driverName: 'Bikram Naskar',
-            phone: '+91 98314 55029',
-            vehicleType: 'toto',
-            vehicleNumber: 'WB-24-ER-8841',
-            vehicleModel: 'Mayuri Grand Li-ion E-Rickshaw',
-            vehicleColor: 'Emerald Green',
-            driverPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-            totoPhotos: [
-              'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=600&auto=format&fit=crop&q=80',
-              'https://images.unsplash.com/photo-1558980664-769d59546b3d?w=600&auto=format&fit=crop&q=80',
-              'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&auto=format&fit=crop&q=80'
-            ],
-            status: 'pending',
-            createdAt: new Date(Date.now() - 3600000).toISOString()
-          };
-          await setDoc(doc(db, 'driver_approvals', sampleAppr.id), sampleAppr);
+    const existingAppr = appDb.getAll<DriverApprovalRequest>('driver_approvals');
+    if (existingAppr.length === 0) {
+      const sampleAppr: DriverApprovalRequest = {
+        id: 'appr_sample_bikram',
+        driverName: 'Bikram Naskar',
+        phone: '+91 98314 55029',
+        vehicleType: 'toto',
+        vehicleNumber: 'WB-24-ER-8841',
+        vehicleModel: 'Mayuri Grand Li-ion E-Rickshaw',
+        vehicleColor: 'Emerald Green',
+        driverPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+        totoPhotos: [
+          'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=600&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1558980664-769d59546b3d?w=600&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&auto=format&fit=crop&q=80'
+        ],
+        status: 'pending',
+        createdAt: new Date(Date.now() - 3600000).toISOString()
+      };
+      appDb.set('driver_approvals', sampleAppr.id, sampleAppr);
+    }
+
+    // Seed Users if table is empty
+    const existingUsers = appDb.getAll<UserProfile>('users');
+    if (existingUsers.length === 0) {
+      const SEED_USERS: UserProfile[] = [
+        {
+          id: 'usr_subrata',
+          name: 'Subrata Naskar',
+          phone: '+91 98301 45289',
+          email: 'subrata@totodrive.in',
+          avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
+          rating: 4.95,
+          totalRides: 42,
+          walletBalance: 450,
+          status: 'active',
+          createdAt: '2025-01-12T10:00:00.000Z',
+          notes: 'Frequent commuter from Sector V to Salt Lake.'
+        },
+        {
+          id: 'usr_koushik',
+          name: 'Koushik Haldar',
+          phone: '+91 98311 02458',
+          email: 'koushik@totodrive.in',
+          avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=120&auto=format&fit=crop&q=80',
+          rating: 4.9,
+          totalRides: 38,
+          walletBalance: 320,
+          status: 'active',
+          createdAt: '2025-01-20T11:30:00.000Z',
+          notes: 'Daily office rider at DLF 2 IT Park.'
+        },
+        {
+          id: 'usr_ananya',
+          name: 'Ananya Sen',
+          phone: '+91 98302 99412',
+          email: 'ananya.sen@gmail.com',
+          avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80',
+          rating: 4.8,
+          totalRides: 19,
+          walletBalance: 120,
+          status: 'active',
+          createdAt: '2025-02-02T09:15:00.000Z',
+          notes: 'City Centre 1 frequent shopper.'
+        },
+        {
+          id: 'usr_rohit',
+          name: 'Rohit Bhattacharya',
+          phone: '+91 98744 11204',
+          email: 'rohit.b@yahoo.co.in',
+          avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80',
+          rating: 3.8,
+          totalRides: 5,
+          walletBalance: 0,
+          status: 'blocked',
+          createdAt: '2025-02-15T14:20:00.000Z',
+          notes: 'Account suspended due to policy violation dispute.'
         }
-      } catch (err) {
-        if (isQuotaExceededError(err)) {
-          setIsFirestoreQuotaExceeded(true);
-        }
-        console.warn('Initial drivers bootstrap warning:', err);
+      ];
+      for (const u of SEED_USERS) {
+        appDb.set('users', u.id, u);
       }
-    };
-    initDrivers();
+    }
+
+    // Seed Rides if table is empty
+    const existingRides = appDb.getAll<ActiveRide>('rides');
+    if (existingRides.length === 0) {
+      const SEED_RIDES: ActiveRide[] = [
+        {
+          id: 'RIDE-9021',
+          userId: 'usr_subrata',
+          userName: 'Subrata Naskar',
+          userPhone: '+91 98301 45289',
+          userRating: 4.95,
+          driverId: 'drv_1',
+          driverName: 'Bikram Naskar',
+          driverPhone: '+91 98314 55029',
+          vehicleNumber: 'WB-24-ER-8841',
+          vehicleModel: 'Mayuri Grand Li-ion E-Rickshaw',
+          vehicleType: 'toto',
+          pickup: {
+            lat: 22.5735,
+            lng: 88.4331,
+            name: 'Sector V Metro Station (Gate 2)',
+            address: 'Sector V Metro Station (Gate 2), Salt Lake'
+          },
+          dropoff: {
+            lat: 22.5898,
+            lng: 88.4082,
+            name: 'City Centre 1 Mall',
+            address: 'City Centre 1 Mall, DC Block, Salt Lake'
+          },
+          distanceKm: 1.8,
+          estimatedMins: 6,
+          basePrice: 35,
+          discount: 5,
+          totalFare: 35,
+          driverEarnings: 31,
+          paymentMethod: 'upi',
+          paymentStatus: 'paid',
+          status: 'completed',
+          otp: '4912',
+          bookedAt: 'Today, 10:14 AM',
+          completedAt: 'Today, 10:20 AM'
+        },
+        {
+          id: 'RIDE-9022',
+          userId: 'usr_ananya',
+          userName: 'Ananya Sen',
+          userPhone: '+91 98302 99412',
+          userRating: 4.8,
+          driverId: 'drv_2',
+          driverName: 'Bappa Paul',
+          driverPhone: '+91 98302 11984',
+          vehicleNumber: 'WB-08-ER-3921',
+          vehicleModel: 'Saarthi Star High-Range Toto',
+          vehicleType: 'toto',
+          pickup: {
+            lat: 22.5898,
+            lng: 88.4082,
+            name: 'City Centre 1 Mall',
+            address: 'City Centre 1 Mall, DC Block, Salt Lake'
+          },
+          dropoff: {
+            lat: 22.5861,
+            lng: 88.4199,
+            name: 'Karunamoyee Bus Terminal',
+            address: 'Karunamoyee Central Bus Terminal, Salt Lake'
+          },
+          distanceKm: 2.2,
+          estimatedMins: 8,
+          basePrice: 45,
+          discount: 0,
+          totalFare: 45,
+          driverEarnings: 40,
+          paymentMethod: 'wallet',
+          paymentStatus: 'paid',
+          status: 'in_progress',
+          otp: '7721',
+          bookedAt: 'Today, 10:30 AM'
+        },
+        {
+          id: 'RIDE-9020',
+          userId: 'usr_koushik',
+          userName: 'Koushik Haldar',
+          userPhone: '+91 98311 02458',
+          userRating: 4.9,
+          driverId: 'drv_3',
+          driverName: 'Joydeb Das',
+          driverPhone: '+91 98366 45091',
+          vehicleNumber: 'WB-02-ER-7712',
+          vehicleModel: 'Thukral Electric EcoToto',
+          vehicleType: 'toto',
+          pickup: {
+            lat: 22.5815,
+            lng: 88.4729,
+            name: 'Eco Space Business Park',
+            address: 'Eco Space Business Park, New Town'
+          },
+          dropoff: {
+            lat: 22.6288,
+            lng: 88.4552,
+            name: 'City Centre 2 (Rajarhat)',
+            address: 'City Centre 2, Major Arterial Road, Rajarhat'
+          },
+          distanceKm: 4.1,
+          estimatedMins: 14,
+          basePrice: 65,
+          discount: 10,
+          totalFare: 65,
+          driverEarnings: 58,
+          paymentMethod: 'cash',
+          paymentStatus: 'paid',
+          status: 'completed',
+          otp: '8834',
+          bookedAt: 'Yesterday, 06:45 PM',
+          completedAt: 'Yesterday, 07:00 PM'
+        },
+        {
+          id: 'RIDE-9019',
+          userId: 'usr_rohit',
+          userName: 'Rohit Bhattacharya',
+          userPhone: '+91 98744 11204',
+          userRating: 3.8,
+          driverId: 'drv_1',
+          driverName: 'Bikram Naskar',
+          driverPhone: '+91 98314 55029',
+          vehicleNumber: 'WB-24-ER-8841',
+          vehicleModel: 'Mayuri Grand Li-ion E-Rickshaw',
+          vehicleType: 'toto',
+          pickup: {
+            lat: 22.5936,
+            lng: 88.4725,
+            name: 'DLF 2 IT Park',
+            address: 'DLF 2 IT Park, Action Area II, New Town'
+          },
+          dropoff: {
+            lat: 22.5861,
+            lng: 88.4199,
+            name: 'Karunamoyee Terminal',
+            address: 'Karunamoyee Central Bus Terminal'
+          },
+          distanceKm: 2.9,
+          estimatedMins: 10,
+          basePrice: 50,
+          discount: 0,
+          totalFare: 0,
+          driverEarnings: 0,
+          paymentMethod: 'cash',
+          paymentStatus: 'pending',
+          status: 'cancelled',
+          otp: '1249',
+          bookedAt: 'Yesterday, 02:10 PM'
+        }
+      ];
+      for (const r of SEED_RIDES) {
+        appDb.set('rides', r.id, r);
+      }
+    }
   }, []);
 
-  // 1b. Real-time Firestore listener for driver registration approvals
+  // 1b. Real-time pub/sub listeners for Users, Rides, and Drivers
   useEffect(() => {
-    const approvalsRef = collection(db, 'driver_approvals');
-    const unsubscribe = onSnapshot(approvalsRef, (snapshot) => {
-      const list: DriverApprovalRequest[] = [];
+    const unsubUsers = appDb.subscribe<UserProfile>('users', (list) => {
+      setAllUsers(list);
+    });
+    const unsubRides = appDb.subscribe<ActiveRide>('rides', (list) => {
+      setAllRides(list);
+    });
+    const unsubDrivers = appDb.subscribe<DriverProfile>('drivers', (list) => {
+      setAllDrivers(list);
+      setOnlineDrivers(list.length > 0 ? list : SEED_DRIVERS);
+    });
+
+    return () => {
+      unsubUsers();
+      unsubRides();
+      unsubDrivers();
+    };
+  }, []);
+
+  // 1b. Real-time listener for driver registration approvals
+  useEffect(() => {
+    const unsubscribe = appDb.subscribe<DriverApprovalRequest>('driver_approvals', (list) => {
       let pending = 0;
-      snapshot.forEach((d) => {
-        const item = d.data() as DriverApprovalRequest;
-        list.push(item);
+      list.forEach((item) => {
         if (item.status === 'pending') {
           pending += 1;
         }
       });
-      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      setDriverApprovals(list);
+      const sorted = [...list].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      setDriverApprovals(sorted);
       setPendingApprovalsCount(pending);
-    }, (error) => {
-      if (isQuotaExceededError(error)) {
-        setIsFirestoreQuotaExceeded(true);
-      }
-      handleFirestoreError(error, OperationType.LIST, 'driver_approvals');
     });
 
     return () => unsubscribe();
   }, []);
 
-  // 2. Real-time Firestore listener on all registered online Toto Drivers
+  // 2. Real-time listener on all registered online Toto Drivers
   useEffect(() => {
-    const driversRef = collection(db, 'drivers');
-    const unsubscribe = onSnapshot(driversRef, (snapshot) => {
-      const list: DriverProfile[] = [];
-      snapshot.forEach((d) => {
-        list.push(d.data() as DriverProfile);
-      });
+    const unsubscribe = appDb.subscribe<DriverProfile>('drivers', (list) => {
       setOnlineDrivers(list.length > 0 ? list : SEED_DRIVERS);
-    }, (error) => {
-      setOnlineDrivers((prev) => (prev.length > 0 ? prev : SEED_DRIVERS));
-      if (isQuotaExceededError(error)) {
-        setIsFirestoreQuotaExceeded(true);
-      }
-      handleFirestoreError(error, OperationType.LIST, 'drivers');
     });
 
     return () => unsubscribe();
   }, []);
 
-  // 3. Passenger Auth Initialization
+  // 3. User Authentication state initialization & Supabase Auth Sync
   useEffect(() => {
+    try {
+      const saved = localStorage.getItem('toto_saved_user');
+      if (saved) {
+        setUser(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.warn('Error reading saved user:', e);
+    }
     setIsAuthLoading(false);
-  }, []);
 
-  // 3b. Real-time Supabase Auth state listener (supports Google OAuth redirect & session)
-  useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!supabase) return;
 
-    const client = getSupabaseClient();
-    client?.auth.getSession().then(({ data: { session } }) => {
+    // Check current Supabase session
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        const profile = mapSupabaseUserToProfile(session.user);
-        setUser((prev) => prev || profile);
+        const u = session.user;
+        const targetEmail = u.email || 'ulove2182@gmail.com';
+        const targetName = u.user_metadata?.full_name || u.user_metadata?.name || targetEmail.split('@')[0];
+        const targetAvatar = u.user_metadata?.avatar_url || u.user_metadata?.picture || 'https://lh3.googleusercontent.com/a/default-user=s96-c';
+        const targetPhone = u.phone || u.user_metadata?.phone || '+91 98301 45289';
+        const profileId = 'usr_' + (u.id || targetEmail.replace(/[^a-zA-Z0-9]/g, '_'));
+
+        const profile: UserProfile = {
+          id: profileId,
+          name: typeof targetName === 'string' ? targetName : 'Passenger',
+          phone: typeof targetPhone === 'string' ? targetPhone : '+91 98301 45289',
+          email: targetEmail,
+          rating: 4.95,
+          totalRides: 0,
+          walletBalance: 250,
+          avatarUrl: targetAvatar,
+          createdAt: new Date().toISOString()
+        };
+
+        const existing = appDb.get<UserProfile>('users', profileId);
+        if (existing) {
+          setUser({ ...profile, ...existing });
+        } else {
+          appDb.set('users', profileId, profile);
+          setUser(profile);
+        }
       }
-    }).catch((err) => {
-      console.warn('Supabase session check warning:', err);
+    }).catch(console.warn);
+
+    // Listen for auth state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user && (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION')) {
+        const u = session.user;
+        const targetEmail = u.email || 'ulove2182@gmail.com';
+        const targetName = u.user_metadata?.full_name || u.user_metadata?.name || targetEmail.split('@')[0];
+        const targetAvatar = u.user_metadata?.avatar_url || u.user_metadata?.picture || 'https://lh3.googleusercontent.com/a/default-user=s96-c';
+        const targetPhone = u.phone || u.user_metadata?.phone || '+91 98301 45289';
+        const profileId = 'usr_' + (u.id || targetEmail.replace(/[^a-zA-Z0-9]/g, '_'));
+
+        const profile: UserProfile = {
+          id: profileId,
+          name: typeof targetName === 'string' ? targetName : 'Passenger',
+          phone: typeof targetPhone === 'string' ? targetPhone : '+91 98301 45289',
+          email: targetEmail,
+          rating: 4.95,
+          totalRides: 0,
+          walletBalance: 250,
+          avatarUrl: targetAvatar,
+          createdAt: new Date().toISOString()
+        };
+
+        const existing = appDb.get<UserProfile>('users', profileId);
+        if (existing) {
+          setUser({ ...profile, ...existing });
+        } else {
+          appDb.set('users', profileId, profile);
+          setUser(profile);
+        }
+        try {
+          localStorage.setItem('toto_saved_user', JSON.stringify(profile));
+        } catch {}
+      }
     });
 
-    const unsub = onSupabaseAuthStateChange(async (_session, sbUser) => {
-      if (sbUser) {
-        const profile = mapSupabaseUserToProfile(sbUser);
-        setUser(profile);
-        triggerSound('success');
-      }
-    });
-
     return () => {
-      if (unsub) unsub();
-    };
-  }, [triggerSound]);
-
-  // 3c. Synchronize authenticated user profile and collections from Supabase
-  useEffect(() => {
-    if (!user?.id) return;
-    let isMounted = true;
-
-    const syncUserData = async () => {
-      try {
-        await upsertSupabaseProfile(user);
-
-        const [places, contacts, scheduled, tickets, trips, dbProfile] = await Promise.all([
-          getSupabaseSavedPlaces(user.id),
-          getSupabaseEmergencyContacts(user.id),
-          getSupabaseScheduledRides(user.id),
-          getSupabaseSupportTickets(user.id),
-          getSupabaseUserTrips(user.id),
-          getSupabaseProfile(user.id),
-        ]);
-
-        if (!isMounted) return;
-
-        if (places && places.length > 0) setSavedPlaces(places);
-        if (contacts && contacts.length > 0) setEmergencyContacts(contacts);
-        if (scheduled && scheduled.length > 0) setScheduledRides(scheduled);
-        if (tickets && tickets.length > 0) setSupportTickets(tickets);
-        if (trips && trips.length > 0) setCompletedTrips(trips);
-        if (dbProfile && typeof dbProfile.walletBalance === 'number') {
-          setWalletBalance(dbProfile.walletBalance);
-        }
-      } catch (err) {
-        console.warn('Supabase user data sync notice:', err);
-      }
-    };
-
-    syncUserData();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [user?.id]);
-
-  // 3d. Synchronize drivers and driver approvals with Supabase
-  useEffect(() => {
-    let isMounted = true;
-    const syncDriversAndApprovals = async () => {
-      try {
-        const [sbDrivers, sbApprovals] = await Promise.all([
-          getSupabaseDrivers(),
-          getSupabaseDriverApprovals(),
-        ]);
-        if (!isMounted) return;
-
-        if (sbDrivers && sbDrivers.length > 0) {
-          setOnlineDrivers(sbDrivers);
-        }
-        if (sbApprovals && sbApprovals.length > 0) {
-          setDriverApprovals(sbApprovals);
-          setPendingApprovalsCount(sbApprovals.filter((a) => a.status === 'pending').length);
-        }
-      } catch (err) {
-        console.warn('Supabase driver list sync notice:', err);
-      }
-    };
-
-    syncDriversAndApprovals();
-
-    return () => {
-      isMounted = false;
+      authListener?.subscription?.unsubscribe();
     };
   }, []);
 
-  // 4. Real-time Firestore listener on Active Ride
+  // 4. Real-time listener on Active Ride
   useEffect(() => {
     if (!activeRide?.id) return;
 
-    const rideRef = doc(db, 'rides', activeRide.id);
-    const unsubscribe = onSnapshot(rideRef, (snap) => {
-      if (snap.exists()) {
-        const liveRide = snap.data() as ActiveRide;
+    const unsubscribe = appDb.subscribe<ActiveRide>('rides', (allRides) => {
+      const liveRide = allRides.find((r) => r.id === activeRide.id);
+      if (liveRide) {
         setActiveRide(liveRide);
       }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `rides/${activeRide.id}`);
     });
 
     return () => unsubscribe();
   }, [activeRide?.id]);
 
-  // 5. Real-time Firestore listener for online Toto Captains to receive ride dispatches
+  // 5. Real-time listener for online Toto Captains to receive ride dispatches
   useEffect(() => {
     if (!driver || !driver.isOnline) {
       setPendingDriverRequest(null);
       return;
     }
 
-    const ridesQuery = query(
-      collection(db, 'rides'),
-      where('status', '==', 'searching')
-    );
-
-    const unsubscribe = onSnapshot(ridesQuery, (snapshot) => {
+    const unsubscribe = appDb.subscribe<ActiveRide>('rides', (allRides) => {
       let candidate: ActiveRide | null = null;
-      snapshot.forEach((docSnap) => {
-        const r = docSnap.data() as ActiveRide;
-        // Either targeted offer for this specific captain or unassigned searching ride
-        if (!r.driverId || r.driverId === driver.id) {
-          candidate = r;
+      allRides.forEach((r) => {
+        if (r.status === 'searching') {
+          if (!r.driverId || r.driverId === driver.id) {
+            candidate = r;
+          }
         }
       });
 
@@ -729,8 +881,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setPendingDriverRequest(null);
       }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'rides');
     });
 
     return () => unsubscribe();
@@ -771,7 +921,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         triggerSound('success');
 
         try {
-          await updateDoc(doc(db, 'rides', activeRide.id), sanitizeForFirestore(assignedUpdates));
+          appDb.update('rides', activeRide.id, assignedUpdates);
         } catch {
           // Non-blocking
         }
@@ -809,7 +959,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   timestamp: Date.now()
                 }
               };
-              updateDoc(doc(db, 'rides', prev.id), sanitizeForFirestore(arrivedUpdates)).catch(() => {});
+              appDb.update('rides', prev.id, arrivedUpdates);
               return { ...prev, ...arrivedUpdates };
             } else if (prev.status === 'in_progress') {
               triggerSound('success');
@@ -824,7 +974,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   timestamp: Date.now()
                 }
               };
-              updateDoc(doc(db, 'rides', prev.id), sanitizeForFirestore(completedUpdates)).catch(() => {});
+              appDb.update('rides', prev.id, completedUpdates);
               return { ...prev, ...completedUpdates };
             }
           }
@@ -842,10 +992,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
             timestamp: Date.now()
           };
 
-          // Background Firestore sync - skip if quota reached
-          if (!isFirestoreQuotaExceeded && !getIsQuotaExceeded()) {
-            updateDoc(doc(db, 'rides', prev.id), { driverLocation: newLocation }).catch(() => {});
-          }
+          // Background sync
+          appDb.update('rides', prev.id, { driverLocation: newLocation });
 
           return {
             ...prev,
@@ -866,7 +1014,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setActiveRide((prev) => prev ? { ...prev, ...inProgressUpdates } : null);
         triggerSound('success');
         try {
-          await updateDoc(doc(db, 'rides', activeRide.id), sanitizeForFirestore(inProgressUpdates));
+          appDb.update('rides', activeRide.id, inProgressUpdates);
         } catch {
           // non-blocking
         }
@@ -876,126 +1024,84 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [activeRole, activeRide?.id, activeRide?.status, triggerSound, onlineDrivers]);
 
-  // Module-level guard to prevent concurrent popup requests that cause assertion failures
-  const isGoogleAuthInProgressRef = { current: false };
-
-  // Passenger Supabase Google Auth
-  const loginWithGoogleSupabase = async (): Promise<void> => {
-    if (!isSupabaseConfigured) {
-      throw new Error(
-        'Supabase is not configured. Please define VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your project settings.'
-      );
-    }
-    triggerSound('beep');
-    await signInWithGoogleSupabase();
-  };
-
-  // Passenger Google Auth (Prefers Supabase if configured, falls back to Firebase)
-  const loginWithGoogle = async (): Promise<UserProfile> => {
-    if (isGoogleAuthInProgressRef.current) {
-      if (user) return user;
-      throw new Error('Google sign-in is already in progress. Please complete or close the existing window.');
-    }
-    isGoogleAuthInProgressRef.current = true;
-
-    try {
-      // 1. Try Supabase Google OAuth via popup (per oauth-integration guidelines)
-      if (isSupabaseConfigured) {
-        triggerSound('beep');
-        try {
-          const authResult = await signInWithGoogleSupabase();
-          if (authResult.success && authResult.user) {
-            setUser(authResult.user);
-            await setDoc(doc(db, 'users', authResult.user.id), authResult.user, { merge: true });
-            triggerSound('success');
-            return authResult.user;
-          }
-        } catch (authErr: any) {
-          console.warn('Supabase Google OAuth status:', authErr);
-          if (authErr?.message?.includes('popup was blocked')) {
-            throw authErr;
-          }
-        }
-      }
-
-      // 2. Verified Google Profile login
-      const localProfile: UserProfile = {
-        id: 'usr_g_halderkoushik',
-        name: 'Koushik Halder',
-        phone: '+91 98301 45289',
-        email: 'halderkoushik120@gmail.com',
-        rating: 4.98,
-        totalRides: 4,
-        walletBalance: 250,
-        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-        createdAt: new Date().toISOString(),
-        savedPlaces: {
-          home: { name: 'Home (Salt Lake)', address: 'Sector 1, Salt Lake, Kolkata', lat: 22.5855, lng: 88.4211 },
-          work: { name: 'Office (Sector V)', address: 'Webel Bhavan, Sector V, Kolkata', lat: 22.5726, lng: 88.4312 },
-        }
-      };
-      await setDoc(doc(db, 'users', localProfile.id), localProfile, { merge: true });
-      setUser(localProfile);
-      triggerSound('success');
-      return localProfile;
-    } finally {
-      isGoogleAuthInProgressRef.current = false;
-    }
-  };
-
   // Passenger Phone / direct profile login
   const loginUser = async (u: UserProfile) => {
     try {
-      const uid = u.id;
+      const uid = u.id || `usr_${Date.now()}`;
       const profileToSave: UserProfile = {
         ...u,
         id: uid
       };
+      appDb.set('users', uid, profileToSave);
       setUser(profileToSave);
+      try {
+        localStorage.setItem('toto_saved_user', JSON.stringify(profileToSave));
+      } catch {}
       triggerSound('success');
-
-      // Sync with Supabase profiles table
-      upsertSupabaseProfile(profileToSave).catch((err) => {
-        console.warn('Supabase loginUser profile sync notice:', err);
-      });
-
-      await setDoc(doc(db, 'users', uid), sanitizeForFirestore(profileToSave), { merge: true });
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `users/${u.id}`);
+      console.error('Error logging in user:', error);
     }
   };
 
+  // Sync Firebase Auth state changes
+  useEffect(() => {
+    try {
+      const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
+        if (fbUser) {
+          setUser((current) => {
+            if (current && current.id === fbUser.uid) return current;
+            const cleanPhone = (fbUser.phoneNumber || '').replace(/\D/g, '');
+            const syncedUser: UserProfile = {
+              id: fbUser.uid,
+              name: fbUser.displayName || current?.name || 'Passenger',
+              email: fbUser.email || current?.email || '',
+              phone: fbUser.phoneNumber || current?.phone || (cleanPhone ? `+91 ${cleanPhone.slice(-10)}` : ''),
+              avatarUrl: fbUser.photoURL || current?.avatarUrl || `https://api.dicebear.com/7.x/personas/svg?seed=${fbUser.uid}`,
+              rating: current?.rating ?? 4.95,
+              totalRides: current?.totalRides ?? 0,
+              savedPlaces: current?.savedPlaces ?? {},
+              walletBalance: current?.walletBalance ?? 250,
+              createdAt: current?.createdAt || new Date().toISOString()
+            };
+            try {
+              localStorage.setItem('toto_saved_user', JSON.stringify(syncedUser));
+              appDb.set('users', syncedUser.id, syncedUser);
+            } catch {}
+            return syncedUser;
+          });
+        }
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Firebase onAuthStateChanged setup notice:', e);
+    }
+  }, []);
+
   const logoutUser = async () => {
     try {
-      await signOutSupabase().catch(() => {});
+      await logOutFromFirebase().catch(() => {});
+    } catch {}
+    try {
+      if (supabase) {
+        await supabase.auth.signOut().catch(() => {});
+      }
+    } catch {}
+    try {
+      localStorage.removeItem('toto_saved_user');
     } catch {}
     setUser(null);
     setActiveNavTabState('home');
     triggerSound('beep');
   };
 
-  // Driver Login / Registration with instant state update + background async sync
+  // Driver Login / Registration with instant state update + background sync
   const loginDriver = async (d: DriverProfile) => {
-    // 1. Immediately update state so UI transitions with 0ms delay
     setDriver(d);
     try {
       localStorage.setItem('toto_saved_driver', JSON.stringify(d));
     } catch {}
     triggerSound('success');
-
-    // 2. Synchronize with Supabase drivers table
-    upsertSupabaseDriver(d).catch((err) => {
-      console.warn('Supabase driver login sync notice:', err);
-    });
-
-    // 2. Asynchronous background local sync (non-blocking)
-    (async () => {
-      try {
-        await setDoc(doc(db, 'drivers', d.id), sanitizeForFirestore(d), { merge: true });
-      } catch (error) {
-        console.warn('Driver profile background sync notice:', error);
-      }
-    })();
+    appDb.set('drivers', d.id, d);
   };
 
   const logoutDriver = () => {
@@ -1019,9 +1125,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     totoPhotos?: string[];
   }): Promise<{ approvalId: string; message: string }> => {
     try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
-      }
       const cleanPhone = data.phone.trim();
       const approvalId = `appr_${Date.now()}`;
       const driverDocId = `drv_${cleanPhone.replace(/\D/g, '').slice(-6) || Date.now().toString().slice(-6)}`;
@@ -1063,12 +1166,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Store in driver_approvals collection
-      await setDoc(doc(db, 'driver_approvals', approvalId), sanitizeForFirestore(approvalDoc));
-
-      // Synchronize with Supabase driver_approvals
-      insertSupabaseDriverApproval(approvalDoc).catch((err) => {
-        console.warn('Supabase driver approval insert notice:', err);
-      });
+      appDb.set('driver_approvals', approvalId, approvalDoc);
 
       // Also create initial record in drivers collection with pending status
       const initialDriverDoc: DriverProfile = {
@@ -1095,12 +1193,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         registeredAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      await setDoc(doc(db, 'drivers', driverDocId), sanitizeForFirestore(initialDriverDoc), { merge: true });
-
-      // Synchronize initial driver record to Supabase
-      upsertSupabaseDriver(initialDriverDoc).catch((err) => {
-        console.warn('Supabase initial driver upsert notice:', err);
-      });
+      appDb.set('drivers', driverDocId, initialDriverDoc);
 
       triggerSound('alert');
       return {
@@ -1108,7 +1201,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         message: 'Registration request submitted to Admin! Waiting for verification and 4-digit PIN assignment.'
       };
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'driver_approvals');
+      console.error('Registration request error:', error);
       throw error;
     }
   };
@@ -1116,9 +1209,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Admin approves driver registration & generates unique 4-digit PIN
   const approveDriverRegistration = async (approvalId: string, customPin?: string): Promise<{ pin: string }> => {
     try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
-      }
       // Generate random unique 4-digit security pin
       const pin = customPin || Math.floor(1000 + Math.random() * 9000).toString();
       const approvedAt = new Date().toISOString();
@@ -1127,15 +1217,11 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const cleanPhone = (targetApproval?.phone || '').replace(/\D/g, '');
       const driverDocId = `drv_${cleanPhone.slice(-6) || approvalId.slice(-6)}`;
 
-      // 1. Update driver_approvals document in Firebase & Supabase
-      await setDoc(doc(db, 'driver_approvals', approvalId), {
+      // 1. Update driver_approvals document
+      appDb.update('driver_approvals', approvalId, {
         status: 'approved',
         generatedPin: pin,
         approvedAt
-      }, { merge: true });
-
-      updateSupabaseDriverApprovalStatus(approvalId, 'approved', pin).catch((err) => {
-        console.warn('Supabase approve status notice:', err);
       });
 
       // 2. Update/create DriverProfile in drivers collection with generated PIN
@@ -1167,16 +1253,12 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentLng: 88.4378,
         updatedAt: approvedAt
       };
-      await setDoc(doc(db, 'drivers', driverDocId), sanitizeForFirestore(approvedDriver), { merge: true });
-
-      upsertSupabaseDriver(approvedDriver).catch((err) => {
-        console.warn('Supabase approved driver upsert notice:', err);
-      });
+      appDb.set('drivers', driverDocId, approvedDriver);
 
       triggerSound('success');
       return { pin };
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `driver_approvals/${approvalId}`);
+      console.error('Driver approval error:', error);
       throw error;
     }
   };
@@ -1184,21 +1266,13 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Admin rejects driver registration
   const rejectDriverRegistration = async (approvalId: string): Promise<void> => {
     try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
-      }
-      await setDoc(doc(db, 'driver_approvals', approvalId), {
+      appDb.update('driver_approvals', approvalId, {
         status: 'rejected',
         updatedAt: new Date().toISOString()
-      }, { merge: true });
-
-      updateSupabaseDriverApprovalStatus(approvalId, 'rejected').catch((err) => {
-        console.warn('Supabase reject status notice:', err);
       });
-
       triggerSound('beep');
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `driver_approvals/${approvalId}`);
+      console.error('Driver rejection error:', error);
       throw error;
     }
   };
@@ -1206,59 +1280,31 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Admin permanently deletes driver profile (removes from approvals, fleet and local cache)
   const deleteDriverProfile = async (idOrPhone: string): Promise<{ success: boolean; message: string }> => {
     try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
-      }
-
       const cleanDigits = idOrPhone.replace(/\D/g, '');
       const targetApproval = driverApprovals.find(
         (a) => a.id === idOrPhone || (cleanDigits && a.phone.replace(/\D/g, '').endsWith(cleanDigits))
       );
       const approvalDocId = targetApproval ? targetApproval.id : idOrPhone;
 
-      // Supabase deletion sync
-      deleteSupabaseDriverApproval(approvalDocId).catch((err) => {
-        console.warn('Supabase delete approval notice:', err);
-      });
+      // 1. Delete from driver_approvals
+      appDb.delete('driver_approvals', approvalDocId);
 
-      // 1. Delete from Firestore driver_approvals
-      try {
-        await deleteDoc(doc(db, 'driver_approvals', approvalDocId));
-      } catch (err) {
-        console.warn('Delete driver_approvals warning:', err);
-      }
-
-      // 2. Delete from Firestore drivers
+      // 2. Delete from drivers
       const targetDriver = onlineDrivers.find(
         (d) => d.id === idOrPhone || (cleanDigits && d.phone.replace(/\D/g, '').endsWith(cleanDigits))
       );
       const driverDocId = targetDriver ? targetDriver.id : (cleanDigits ? `driver_${cleanDigits}` : idOrPhone);
+      appDb.delete('drivers', driverDocId);
 
-      // Supabase driver deletion sync
-      deleteSupabaseDriver(driverDocId).catch((err) => {
-        console.warn('Supabase delete driver notice:', err);
-      });
-
-      try {
-        await deleteDoc(doc(db, 'drivers', driverDocId));
-      } catch (err) {
-        console.warn('Delete drivers doc warning:', err);
-      }
-
-      // Also clean up by querying phone in drivers collection if valid 10 digits
+      // Also clean up phone in drivers collection if valid 10 digits
       if (cleanDigits && cleanDigits.length >= 10) {
-        try {
-          const snap = await getDocs(collection(db, 'drivers'));
-          snap.forEach(async (docSnap) => {
-            const data = docSnap.data() as DriverProfile;
-            const docPhoneDigits = (data.phone || '').replace(/\D/g, '');
-            if (docPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(docPhoneDigits)) {
-              await deleteDoc(doc(db, 'drivers', docSnap.id)).catch(() => {});
-            }
-          });
-        } catch (e) {
-          console.warn('Cleanup drivers query warning:', e);
-        }
+        const allDrivers = appDb.getAll<DriverProfile>('drivers');
+        allDrivers.forEach((d) => {
+          const docPhoneDigits = (d.phone || '').replace(/\D/g, '');
+          if (docPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(docPhoneDigits)) {
+            appDb.delete('drivers', d.id);
+          }
+        });
       }
 
       // 3. Update local state immediately
@@ -1285,16 +1331,13 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       triggerSound('alert');
       return { success: true, message: 'Driver profile deleted successfully.' };
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `driver_approvals/${idOrPhone}`);
+      console.error('Delete driver error:', error);
       throw error;
     }
   };
 
   // Phone + 4-digit PIN Driver Login
   const loginDriverWithPin = async (phone: string, pin: string): Promise<{ success: boolean; message?: string }> => {
-    if (!auth.currentUser) {
-      await signInAnonymously(auth).catch(() => {});
-    }
     const cleanDigits = phone.replace(/\D/g, '');
     const cleanPin = pin.trim();
 
@@ -1306,30 +1349,15 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      // 1. Query drivers collection with memory / seed fallback
-      let matchedDriver: DriverProfile | null = null;
-      try {
-        const snap = await getDocs(collection(db, 'drivers'));
-        snap.forEach((docSnap) => {
-          const d = docSnap.data() as DriverProfile;
-          const dPhoneDigits = (d.phone || '').replace(/\D/g, '');
-          if (dPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(dPhoneDigits)) {
-            matchedDriver = d;
-          }
-        });
-      } catch (fErr) {
-        console.warn('Firestore read error in loginDriverWithPin (using local memory fallback):', fErr);
-        if (isQuotaExceededError(fErr)) {
-          setIsFirestoreQuotaExceeded(true);
-        }
-        const candidate = (onlineDrivers.length > 0 ? onlineDrivers : SEED_DRIVERS).find((d) => {
-          const dPhoneDigits = (d.phone || '').replace(/\D/g, '');
-          return dPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(dPhoneDigits);
-        });
-        if (candidate) {
-          matchedDriver = candidate;
-        }
-      }
+      // 1. Query drivers collection
+      const allDrivers = appDb.getAll<DriverProfile>('drivers');
+      const matchedDriver = allDrivers.find((d) => {
+        const dPhoneDigits = (d.phone || '').replace(/\D/g, '');
+        return dPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(dPhoneDigits);
+      }) || (onlineDrivers.length > 0 ? onlineDrivers : SEED_DRIVERS).find((d) => {
+        const dPhoneDigits = (d.phone || '').replace(/\D/g, '');
+        return dPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(dPhoneDigits);
+      });
 
       if (matchedDriver) {
         const driverDoc = matchedDriver as DriverProfile;
@@ -1354,30 +1382,15 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // 2. Query driver_approvals collection with memory fallback
-      let matchedAppr: DriverApprovalRequest | null = null;
-      try {
-        const apprSnap = await getDocs(collection(db, 'driver_approvals'));
-        apprSnap.forEach((docSnap) => {
-          const a = docSnap.data() as DriverApprovalRequest;
-          const aPhoneDigits = (a.phone || '').replace(/\D/g, '');
-          if (aPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(aPhoneDigits)) {
-            matchedAppr = a;
-          }
-        });
-      } catch (fErr) {
-        console.warn('Firestore approvals read error (using local memory fallback):', fErr);
-        if (isQuotaExceededError(fErr)) {
-          setIsFirestoreQuotaExceeded(true);
-        }
-        const candidateAppr = driverApprovals.find((a) => {
-          const aPhoneDigits = (a.phone || '').replace(/\D/g, '');
-          return aPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(aPhoneDigits);
-        });
-        if (candidateAppr) {
-          matchedAppr = candidateAppr;
-        }
-      }
+      // 2. Query driver_approvals collection
+      const allApprovals = appDb.getAll<DriverApprovalRequest>('driver_approvals');
+      const matchedAppr = allApprovals.find((a) => {
+        const aPhoneDigits = (a.phone || '').replace(/\D/g, '');
+        return aPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(aPhoneDigits);
+      }) || driverApprovals.find((a) => {
+        const aPhoneDigits = (a.phone || '').replace(/\D/g, '');
+        return aPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(aPhoneDigits);
+      });
 
       if (matchedAppr) {
         const appr = matchedAppr as DriverApprovalRequest;
@@ -1455,13 +1468,10 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setDriver(updated);
     try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
-      }
-      await setDoc(doc(db, 'drivers', driver.id), sanitizeForFirestore(updated), { merge: true });
+      appDb.set('drivers', driver.id, updated);
       triggerSound('beep');
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `drivers/${driver.id}`);
+      console.error('Update driver details error:', error);
       throw error;
     }
   };
@@ -1482,10 +1492,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createdAt: new Date().toISOString()
     };
     try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
-      }
-      await setDoc(doc(db, 'rideRequests', reqId), sanitizeForFirestore(docData));
+      appDb.set('rideRequests', reqId, docData);
       triggerSound('alert');
     } catch (err) {
       console.warn('Dispatch ride request error:', err);
@@ -1501,13 +1508,10 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setDriver(updated);
     try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
-      }
-      await setDoc(doc(db, 'drivers', driver.id), sanitizeForFirestore(updated), { merge: true });
+      appDb.set('drivers', driver.id, updated);
       triggerSound('beep');
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `drivers/${driver.id}`);
+      console.error('Update driver online status error:', error);
       throw error;
     }
   };
@@ -1546,7 +1550,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setDriver(updatedDriver);
 
       try {
-        await updateDoc(doc(db, 'drivers', driver.id), {
+        appDb.update('drivers', driver.id, {
           currentLat: point.lat,
           currentLng: point.lng,
           heading: headingToUse,
@@ -1567,7 +1571,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         setActiveRide((r) => r ? { ...r, driverLocation: liveLoc } : null);
         try {
-          await updateDoc(doc(db, 'rides', activeRide.id), {
+          appDb.update('rides', activeRide.id, {
             driverLocation: liveLoc
           });
         } catch {
@@ -1583,7 +1587,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSelectedOffer(null);
   }, []);
 
-  // Find dynamic bids/offers from registered online Toto Partners in Firestore
+  // Find dynamic bids/offers from registered online Toto Partners
   const findNearbyTotoOffers = useCallback((
     pickup: GeoPoint,
     dropoff: GeoPoint,
@@ -1596,7 +1600,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const distanceKm = calculateDistanceKm(pickup, dropoff);
 
     setTimeout(() => {
-      // Gather active online drivers from Firestore state, or seed fallback
+      // Gather active online drivers from state or seed fallback
       const driversToUse = onlineDrivers.length > 0 ? onlineDrivers : SEED_DRIVERS;
       const offers: TotoPartnerOffer[] = driversToUse.slice(0, 4).map((d, index) => {
         const offsetLat = (index % 2 === 0 ? 0.001 : -0.001) * (index + 1);
@@ -1633,7 +1637,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, 700);
   }, [onlineDrivers, triggerSound]);
 
-  // Passenger selects specific price & Toto Partner and saves ride to Firestore
+  // Passenger selects specific price & Toto Partner and saves ride
   const selectTotoOfferAndBook = async (
     offer: TotoPartnerOffer,
     pickup: GeoPoint,
@@ -1662,8 +1666,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const newRide: ActiveRide = {
       id: rideId,
-      userId: user?.id || auth.currentUser?.uid || 'usr_passenger',
-      userName: user?.name || auth.currentUser?.displayName || 'Passenger',
+      userId: user?.id || 'usr_passenger',
+      userName: user?.name || 'Passenger',
       userPhone: user?.phone || '+91 98301 45289',
       userRating: user?.rating || 4.9,
       vehicleType: 'toto',
@@ -1699,20 +1703,17 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAvailableTotoOffers([]);
     triggerSound('alert');
 
-    // Persist real-time ride document in Firestore
+    // Persist real-time ride document
     try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
-      }
-      await setDoc(doc(db, 'rides', rideId), sanitizeForFirestore(newRide));
+      appDb.set('rides', rideId, newRide);
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, `rides/${rideId}`);
+      console.error('Ride booking persistence error:', error);
     }
 
     return newRide;
   };
 
-  // Standard createRideBooking saved to Firestore
+  // Standard createRideBooking
   const createRideBooking = async (
     pickup: GeoPoint,
     dropoff: GeoPoint,
@@ -1754,8 +1755,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const newRide: ActiveRide = {
       id: rideId,
-      userId: user?.id || auth.currentUser?.uid || 'usr_passenger',
-      userName: user?.name || auth.currentUser?.displayName || 'Passenger',
+      userId: user?.id || 'usr_passenger',
+      userName: user?.name || 'Passenger',
       userPhone: user?.phone || '+91 98301 45289',
       userRating: user?.rating || 4.9,
       vehicleType,
@@ -1785,18 +1786,15 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     triggerSound('alert');
 
     try {
-      if (!auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
-      }
-      await setDoc(doc(db, 'rides', rideId), sanitizeForFirestore(newRide));
+      appDb.set('rides', rideId, newRide);
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, `rides/${rideId}`);
+      console.error('Error creating ride booking:', error);
     }
 
     return newRide;
   };
 
-  // Driver Accepts Ride in Firestore
+  // Driver Accepts Ride
   const driverAcceptRide = async (rideId: string) => {
     if (!activeRide && !pendingDriverRequest) return;
     const current = pendingDriverRequest || activeRide;
@@ -1826,9 +1824,9 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     triggerSound('success');
 
     try {
-      await updateDoc(doc(db, 'rides', rideId), updates);
+      appDb.update('rides', rideId, updates);
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `rides/${rideId}`);
+      console.error('Error accepting ride:', error);
     }
   };
 
@@ -1837,7 +1835,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     triggerSound('beep');
   };
 
-  // Driver Arrives at Pickup Location in Firestore
+  // Driver Arrives at Pickup Location
   const driverArriveAtPickup = async () => {
     if (!activeRide) return;
     const updates = {
@@ -1851,13 +1849,13 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     triggerSound('beep');
 
     try {
-      await updateDoc(doc(db, 'rides', activeRide.id), updates);
+      appDb.update('rides', activeRide.id, updates);
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `rides/${activeRide.id}`);
+      console.error('Error updating driver arrival:', error);
     }
   };
 
-  // Driver Verifies OTP & Starts Ride in Firestore
+  // Driver Verifies OTP & Starts Ride
   const driverStartRideWithOtp = async (otpInput: string): Promise<{ success: boolean; message: string }> => {
     if (!activeRide) return { success: false, message: 'No active ride found' };
     if (activeRide.otp !== otpInput.trim()) {
@@ -1869,15 +1867,15 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     triggerSound('success');
 
     try {
-      await updateDoc(doc(db, 'rides', activeRide.id), updates);
+      appDb.update('rides', activeRide.id, updates);
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `rides/${activeRide.id}`);
+      console.error('Error starting ride with OTP:', error);
     }
 
     return { success: true, message: 'OTP verified! Ride started.' };
   };
 
-  // Driver Completes Ride & Stores Earnings in Firestore
+  // Driver Completes Ride & Stores Earnings
   const driverCompleteRide = async () => {
     if (!activeRide) return;
     const completedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1896,14 +1894,14 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveRide({ ...activeRide, ...rideUpdates });
     triggerSound('success');
 
-    // 1. Update ride in Firestore
+    // 1. Update ride in db
     try {
-      await updateDoc(doc(db, 'rides', activeRide.id), rideUpdates);
+      appDb.update('rides', activeRide.id, rideUpdates);
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `rides/${activeRide.id}`);
+      console.error('Error completing ride:', error);
     }
 
-    // 2. Persist earnings record in Firestore
+    // 2. Persist earnings record
     const earningId = `tx_${Date.now()}`;
     const newTx = {
       id: earningId,
@@ -1919,12 +1917,12 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setEarningsHistory((prev) => [newTx, ...prev]);
 
     try {
-      await setDoc(doc(db, 'earnings', earningId), newTx);
+      appDb.set('earnings', earningId, newTx);
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, `earnings/${earningId}`);
+      console.error('Error recording earnings:', error);
     }
 
-    // 2b. Persist completed trip in `trips` collection for dynamic driver earnings calculation
+    // 2b. Persist completed trip in `trips` collection
     const tripId = `trip_${Date.now()}`;
     const tripData: TripRecord = {
       id: tripId,
@@ -1940,12 +1938,12 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       passengerName: activeRide.userName || 'Passenger'
     };
     try {
-      await setDoc(doc(db, 'trips', tripId), sanitizeForFirestore(tripData));
+      appDb.set('trips', tripId, tripData);
     } catch (err) {
       console.warn('Error persisting trip record:', err);
     }
 
-    // 3. Update driver todayEarnings in Firestore
+    // 3. Update driver todayEarnings
     if (driver) {
       const updatedDriver = {
         ...driver,
@@ -1954,7 +1952,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       setDriver(updatedDriver);
       try {
-        await updateDoc(doc(db, 'drivers', driver.id), {
+        appDb.update('drivers', driver.id, {
           todayEarnings: updatedDriver.todayEarnings,
           totalTrips: updatedDriver.totalTrips,
           updatedAt: new Date().toISOString()
@@ -1983,7 +1981,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setActiveRide((prev) => prev ? { ...prev, ...updates } : null);
       triggerSound('success');
       try {
-        await updateDoc(doc(db, 'rides', activeRide.id), sanitizeForFirestore(updates));
+        appDb.update('rides', activeRide.id, updates);
       } catch {}
     } else if (activeRide.status === 'driver_assigned' || activeRide.status === 'driver_arriving') {
       const updates = {
@@ -1996,7 +1994,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setActiveRide((prev) => prev ? { ...prev, ...updates } : null);
       triggerSound('beep');
       try {
-        await updateDoc(doc(db, 'rides', activeRide.id), sanitizeForFirestore(updates));
+        appDb.update('rides', activeRide.id, updates);
       } catch {}
     } else if (activeRide.status === 'driver_arrived') {
       const updates = {
@@ -2006,7 +2004,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setActiveRide((prev) => prev ? { ...prev, ...updates } : null);
       triggerSound('success');
       try {
-        await updateDoc(doc(db, 'rides', activeRide.id), sanitizeForFirestore(updates));
+        appDb.update('rides', activeRide.id, updates);
       } catch {}
     } else if (activeRide.status === 'in_progress') {
       await driverCompleteRide();
@@ -2016,13 +2014,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Passenger Rates Ride
   const rateRide = async (rating: number, feedback: string) => {
     if (!activeRide) return;
-    if (user?.id) {
-      rateSupabaseRide(activeRide.id, rating, feedback, user.id).catch((err) => {
-        console.warn('Supabase rate ride notice:', err);
-      });
-    }
     try {
-      await updateDoc(doc(db, 'rides', activeRide.id), {
+      appDb.update('rides', activeRide.id, {
         passengerRating: rating,
         passengerFeedback: feedback,
       });
@@ -2032,14 +2025,11 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveRide(null);
   };
 
-  // Cancel Active Ride in Firestore & Supabase
+  // Cancel Active Ride
   const cancelRide = async (_reason?: string) => {
     if (activeRide) {
-      updateSupabaseRideStatus(activeRide.id, 'cancelled').catch((err) => {
-        console.warn('Supabase cancel ride notice:', err);
-      });
       try {
-        await updateDoc(doc(db, 'rides', activeRide.id), {
+        appDb.update('rides', activeRide.id, {
           status: 'cancelled'
         });
       } catch {
@@ -2055,11 +2045,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setWalletBalance((prev) => {
       const next = prev + amount;
       localStorage.setItem('toto_wallet_balance', next.toString());
-      if (user?.id) {
-        updateSupabaseWalletBalance(user.id, next).catch((err) => {
-          console.warn('Supabase wallet update notice:', err);
-        });
-      }
       return next;
     });
     triggerSound('success');
@@ -2072,16 +2057,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createdAt: new Date().toISOString()
     };
     setSavedPlaces((prev) => [newPlace, ...prev]);
-
-    if (user?.id) {
-      insertSupabaseSavedPlace(newPlace, user.id).catch((err) => {
-        console.warn('Supabase insert saved place notice:', err);
-      });
-    }
-
     try {
-      if (!auth.currentUser) await signInAnonymously(auth).catch(() => {});
-      await setDoc(doc(db, 'saved_places', newPlace.id), sanitizeForFirestore(newPlace));
+      appDb.set('saved_places', newPlace.id, newPlace);
       triggerSound('beep');
     } catch {
       // Offline fallback
@@ -2090,13 +2067,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteSavedPlace = async (placeId: string) => {
     setSavedPlaces((prev) => prev.filter((p) => p.id !== placeId));
-    if (user?.id) {
-      deleteSupabaseSavedPlace(placeId, user.id).catch((err) => {
-        console.warn('Supabase delete saved place notice:', err);
-      });
-    }
     try {
-      await deleteDoc(doc(db, 'saved_places', placeId));
+      appDb.delete('saved_places', placeId);
     } catch {
       // Offline fallback
     }
@@ -2112,16 +2084,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createdAt: new Date().toISOString()
     };
     setEmergencyContacts((prev) => [...prev, contact]);
-
-    if (user?.id) {
-      insertSupabaseEmergencyContact(contact, user.id).catch((err) => {
-        console.warn('Supabase insert emergency contact notice:', err);
-      });
-    }
-
     try {
-      if (!auth.currentUser) await signInAnonymously(auth).catch(() => {});
-      await setDoc(doc(db, 'emergency_contacts', contact.id), sanitizeForFirestore(contact));
+      appDb.set('emergency_contacts', contact.id, contact);
       triggerSound('beep');
     } catch {
       // Offline fallback
@@ -2130,13 +2094,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteEmergencyContact = async (id: string) => {
     setEmergencyContacts((prev) => prev.filter((c) => c.id !== id));
-    if (user?.id) {
-      deleteSupabaseEmergencyContact(id, user.id).catch((err) => {
-        console.warn('Supabase delete emergency contact notice:', err);
-      });
-    }
     try {
-      await deleteDoc(doc(db, 'emergency_contacts', id));
+      appDb.delete('emergency_contacts', id);
     } catch {
       // Offline fallback
     }
@@ -2151,16 +2110,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updatedAt: new Date().toISOString()
     };
     setSupportTickets((prev) => [newTicket, ...prev]);
-
-    if (user?.id) {
-      insertSupabaseSupportTicket(newTicket, user.id).catch((err) => {
-        console.warn('Supabase insert support ticket notice:', err);
-      });
-    }
-
     try {
-      if (!auth.currentUser) await signInAnonymously(auth).catch(() => {});
-      await setDoc(doc(db, 'support_tickets', newTicket.id), sanitizeForFirestore(newTicket));
+      appDb.set('support_tickets', newTicket.id, newTicket);
       triggerSound('beep');
     } catch {
       // Offline fallback
@@ -2169,16 +2120,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const createScheduledRide = async (ride: ScheduledRide) => {
     setScheduledRides((prev) => [ride, ...prev]);
-
-    if (user?.id) {
-      insertSupabaseScheduledRide(ride, user.id).catch((err) => {
-        console.warn('Supabase insert scheduled ride notice:', err);
-      });
-    }
-
     try {
-      if (!auth.currentUser) await signInAnonymously(auth).catch(() => {});
-      await setDoc(doc(db, 'scheduled_rides', ride.id), sanitizeForFirestore(ride));
+      appDb.set('scheduled_rides', ride.id, ride);
       triggerSound('success');
     } catch {
       // Offline fallback
@@ -2187,15 +2130,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const rateRideWithTags = async (stars: number, compliments: string[], review: string) => {
     if (!activeRide) return;
-
-    if (user?.id) {
-      rateSupabaseRide(activeRide.id, stars, review, user.id).catch((err) => {
-        console.warn('Supabase rate ride notice:', err);
-      });
-    }
-
     try {
-      await updateDoc(doc(db, 'rides', activeRide.id), {
+      appDb.update('rides', activeRide.id, {
         passengerRating: stars,
         compliments,
         passengerFeedback: review
@@ -2205,6 +2141,207 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setActiveRide(null);
     triggerSound('success');
+  };
+
+  // User Profile Updates
+  const updateUserProfile = async (updates: Partial<UserProfile>) => {
+    if (!user) return;
+    const updated = { ...user, ...updates };
+    setUser(updated);
+    try {
+      localStorage.setItem('toto_saved_user', JSON.stringify(updated));
+      appDb.update('users', user.id, updates);
+      await upsertSupabaseProfile(updated);
+      triggerSound('success');
+    } catch (e) {
+      console.warn('Error updating profile:', e);
+    }
+  };
+
+  // Admin User Management
+  const adminUpdateUser = async (userId: string, updates: Partial<UserProfile>) => {
+    appDb.update('users', userId, updates);
+    if (user && user.id === userId) {
+      const updated = { ...user, ...updates };
+      setUser(updated);
+      localStorage.setItem('toto_saved_user', JSON.stringify(updated));
+    }
+    const targetUser = appDb.get<UserProfile>('users', userId);
+    if (targetUser) {
+      adminUpsertSupabaseUser(targetUser).catch(() => {});
+    }
+    triggerSound('beep');
+  };
+
+  const adminCreateUser = async (userData: Omit<UserProfile, 'id'> & { id?: string }): Promise<UserProfile> => {
+    const id = userData.id || `usr_${Date.now().toString(36)}`;
+    const newUser: UserProfile = {
+      ...userData,
+      id,
+      rating: userData.rating ?? 5.0,
+      totalRides: userData.totalRides ?? 0,
+      walletBalance: userData.walletBalance ?? 0,
+      status: userData.status ?? 'active',
+      avatarUrl: userData.avatarUrl || `https://api.dicebear.com/7.x/micah/svg?seed=${id}`,
+      createdAt: new Date().toISOString()
+    };
+    appDb.set('users', id, newUser);
+    adminUpsertSupabaseUser(newUser).catch(() => {});
+    triggerSound('success');
+    return newUser;
+  };
+
+  const adminDeleteUser = async (userId: string) => {
+    appDb.delete('users', userId);
+    adminDeleteSupabaseUser(userId).catch(() => {});
+    triggerSound('alert');
+  };
+
+  const adminAdjustUserWallet = async (userId: string, amount: number, note?: string) => {
+    const target = appDb.get<UserProfile>('users', userId);
+    if (!target) return;
+    const newBal = Math.max(0, (target.walletBalance || 0) + amount);
+    appDb.update('users', userId, { walletBalance: newBal, notes: note || target.notes });
+    if (user && user.id === userId) {
+      const updated = { ...user, walletBalance: newBal };
+      setUser(updated);
+      setWalletBalance(newBal);
+      localStorage.setItem('toto_saved_user', JSON.stringify(updated));
+      localStorage.setItem('toto_wallet_balance', newBal.toString());
+    }
+    const refreshed = appDb.get<UserProfile>('users', userId);
+    if (refreshed) {
+      adminUpsertSupabaseUser(refreshed).catch(() => {});
+    }
+    triggerSound('success');
+  };
+
+  const adminToggleUserStatus = async (userId: string) => {
+    const target = appDb.get<UserProfile>('users', userId);
+    if (!target) return;
+    const newStatus = target.status === 'blocked' ? 'active' : 'blocked';
+    appDb.update('users', userId, { status: newStatus });
+    if (user && user.id === userId) {
+      const updated = { ...user, status: newStatus };
+      setUser(updated);
+      localStorage.setItem('toto_saved_user', JSON.stringify(updated));
+    }
+    const refreshed = appDb.get<UserProfile>('users', userId);
+    if (refreshed) {
+      adminUpsertSupabaseUser(refreshed).catch(() => {});
+    }
+    triggerSound('beep');
+  };
+
+  // Admin Ride Management
+  const adminUpdateRide = async (rideId: string, updates: Partial<ActiveRide>) => {
+    appDb.update('rides', rideId, updates);
+    if (activeRide && activeRide.id === rideId) {
+      setActiveRide({ ...activeRide, ...updates });
+    }
+    triggerSound('beep');
+  };
+
+  const adminCreateRide = async (rideData: Partial<ActiveRide>): Promise<ActiveRide> => {
+    const id = rideData.id || `RIDE-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newRide: ActiveRide = {
+      id,
+      userId: rideData.userId || 'usr_subrata',
+      userName: rideData.userName || 'Passenger',
+      userPhone: rideData.userPhone || '+91 98301 45289',
+      userRating: rideData.userRating || 4.9,
+      driverId: rideData.driverId,
+      driverName: rideData.driverName,
+      driverPhone: rideData.driverPhone,
+      driverPhoto: rideData.driverPhoto,
+      vehicleNumber: rideData.vehicleNumber,
+      vehicleModel: rideData.vehicleModel,
+      vehicleType: rideData.vehicleType || 'toto',
+      pickup: rideData.pickup || {
+        lat: 22.5735,
+        lng: 88.4331,
+        name: 'Sector V Metro Station',
+        address: 'Sector V Metro Station, Salt Lake'
+      },
+      dropoff: rideData.dropoff || {
+        lat: 22.5898,
+        lng: 88.4082,
+        name: 'City Centre 1 Mall',
+        address: 'City Centre 1 Mall, DC Block, Salt Lake'
+      },
+      distanceKm: rideData.distanceKm ?? 2.0,
+      estimatedMins: rideData.estimatedMins ?? 8,
+      basePrice: rideData.basePrice ?? 35,
+      discount: rideData.discount ?? 0,
+      totalFare: rideData.totalFare ?? 35,
+      driverEarnings: rideData.driverEarnings ?? 30,
+      paymentMethod: rideData.paymentMethod || 'cash',
+      paymentStatus: rideData.paymentStatus || 'paid',
+      status: rideData.status || 'completed',
+      otp: rideData.otp || generate4DigitOtp(),
+      bookedAt: rideData.bookedAt || 'Just now',
+      completedAt: rideData.completedAt,
+    };
+    appDb.set('rides', id, newRide);
+    triggerSound('success');
+    return newRide;
+  };
+
+  const adminDeleteRide = async (rideId: string) => {
+    appDb.delete('rides', rideId);
+    adminDeleteSupabaseRide(rideId).catch(() => {});
+    if (activeRide && activeRide.id === rideId) {
+      setActiveRide(null);
+    }
+    triggerSound('alert');
+  };
+
+  // Admin Driver Management
+  const adminUpdateDriver = async (driverId: string, updates: Partial<DriverProfile>) => {
+    appDb.update('drivers', driverId, updates);
+    const target = appDb.get<DriverProfile>('drivers', driverId);
+    if (target) {
+      upsertSupabaseDriver(target).catch(() => {});
+    }
+    if (driver && driver.id === driverId) {
+      setDriver({ ...driver, ...updates });
+    }
+    triggerSound('beep');
+  };
+
+  const adminCreateDriver = async (driverData: Partial<DriverProfile>): Promise<DriverProfile> => {
+    const id = driverData.id || `drv_${Date.now().toString(36)}`;
+    const pin = driverData.accessPin || Math.floor(1000 + Math.random() * 9000).toString();
+    const newDriver: DriverProfile = {
+      id,
+      name: driverData.name || 'Toto Captain',
+      phone: driverData.phone || '+91 98000 00000',
+      photoUrl: driverData.photoUrl || `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80`,
+      avatarUrl: driverData.avatarUrl || driverData.photoUrl || `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80`,
+      kycVerified: true,
+      rating: driverData.rating ?? 4.9,
+      totalTrips: driverData.totalTrips ?? driverData.totalRides ?? 0,
+      totalRides: driverData.totalRides ?? driverData.totalTrips ?? 0,
+      vehicleType: driverData.vehicleType || 'toto',
+      vehicleNumber: driverData.vehicleNumber || 'WB-24-ER-' + Math.floor(1000 + Math.random() * 9000),
+      vehicleModel: driverData.vehicleModel || 'Mayuri Grand Li-ion E-Rickshaw',
+      vehicleColor: driverData.vehicleColor || 'Emerald Green',
+      isOnline: driverData.isOnline ?? true,
+      availabilityStatus: driverData.availabilityStatus || 'online',
+      todayEarnings: driverData.todayEarnings ?? 0,
+      todayRides: driverData.todayRides ?? 0,
+      acceptanceRate: driverData.acceptanceRate ?? 98,
+      batteryPercentage: driverData.batteryPercentage ?? 85,
+      pin,
+      accessPin: pin,
+      currentLat: driverData.currentLat || 22.5804,
+      currentLng: driverData.currentLng || 88.4378,
+      updatedAt: new Date().toISOString()
+    };
+    appDb.set('drivers', id, newDriver);
+    upsertSupabaseDriver(newDriver).catch(() => {});
+    triggerSound('success');
+    return newDriver;
   };
 
   // Convert real online drivers into markers for Leaflet map display (filtering out stale updates)
@@ -2236,7 +2373,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         earningsHistory,
         userGpsPoint,
         driverGpsPoint,
-        firebaseAuthUser,
         isAuthLoading,
         availableTotoOffers,
         isScanningOffers,
@@ -2245,9 +2381,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         selectTotoOfferAndBook,
         cancelOfferSearch,
         setActiveRole,
-        isSupabaseConfigured,
-        loginWithGoogle,
-        loginWithGoogleSupabase,
         loginUser,
         logoutUser,
         loginDriver,
@@ -2295,8 +2428,22 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logoutAdmin,
         updateAdminCredentials,
         updateAdminPassword,
+        allUsers,
+        allRides,
+        allDrivers,
+        updateUserProfile,
+        adminUpdateUser,
+        adminCreateUser,
+        adminDeleteUser,
+        adminAdjustUserWallet,
+        adminToggleUserStatus,
+        adminUpdateRide,
+        adminCreateRide,
+        adminDeleteRide,
+        adminUpdateDriver,
+        adminCreateDriver,
         triggerSound,
-        isFirestoreQuotaExceeded,
+        isSupabaseConnected,
       }}
     >
       {children}

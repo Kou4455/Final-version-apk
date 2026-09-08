@@ -7,13 +7,14 @@ import { AdminCustomerManagement } from './AdminCustomerManagement';
 import { AdminRidesManagement } from './AdminRidesManagement';
 import { AdminReports } from './AdminReports';
 import { AdminNotifications } from './AdminNotifications';
+import { AdminDatabaseStorage } from './AdminDatabaseStorage';
 import { DeleteDriverModal } from './DeleteDriverModal';
 import { 
   ShieldCheck, 
   Clock, 
   Check, 
   X, 
-  Trash2,
+  Trash2, 
   Copy, 
   CheckCheck, 
   Phone, 
@@ -25,24 +26,25 @@ import {
   UserCheck, 
   Car, 
   Zap, 
-  LogIn,
-  RotateCw,
-  PlusCircle,
-  MapPin,
-  Users,
-  CreditCard,
-  Tag,
-  BarChart3,
-  Sliders,
-  FileText,
-  DollarSign,
-  TrendingUp,
-  Activity,
-  Percent,
-  LogOut,
-  Lock,
-  Eye,
-  AlertTriangle
+  LogIn, 
+  RotateCw, 
+  PlusCircle, 
+  MapPin, 
+  Users, 
+  CreditCard, 
+  Tag, 
+  BarChart3, 
+  Sliders, 
+  FileText, 
+  DollarSign, 
+  TrendingUp, 
+  Activity, 
+  Percent, 
+  LogOut, 
+  Lock, 
+  Eye, 
+  AlertTriangle,
+  Database
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -56,7 +58,8 @@ type AdminTab =
   | 'coupons' 
   | 'reports' 
   | 'notifications' 
-  | 'audit';
+  | 'audit'
+  | 'database_storage';
 
 export const AdminDashboard: React.FC = () => {
   const { 
@@ -477,6 +480,7 @@ export const AdminDashboard: React.FC = () => {
           { id: 'coupons', label: 'Coupons', icon: Tag },
           { id: 'reports', label: 'Reports & CSV', icon: BarChart3 },
           { id: 'notifications', label: 'Broadcasts', icon: Bell },
+          { id: 'database_storage', label: 'Database & Storage', icon: Database },
           { id: 'audit', label: 'Audit Logs', icon: FileText }
         ].map((tab) => {
           const Icon = tab.icon;
@@ -579,6 +583,35 @@ export const AdminDashboard: React.FC = () => {
               <div className="text-2xl font-extrabold text-neutral-900 mt-1">2</div>
               <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">All under SLA</div>
             </div>
+          </div>
+
+          {/* Database & Data Storage Quick Status Strip */}
+          <div className="bg-white rounded-2xl p-4 border border-neutral-200 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 text-[#E07A00] flex items-center justify-center font-bold shrink-0">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-sm text-[#111111]">Database & Data Storage Engine</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">Active</span>
+                </div>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Supabase PostgreSQL tables, reactive offline cache, KYC storage assets & automated backups.
+                </p>
+              </div>
+            </div>
+
+            <button
+              id="overview-manage-database-btn"
+              type="button"
+              onClick={() => { setCurrentTab('database_storage'); triggerSound('beep'); }}
+              className="px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs"
+            >
+              <span>Manage Database & Storage</span>
+              <span className="text-[#FF6B2C]">&rarr;</span>
+            </button>
           </div>
 
           {/* Pending / Approved Drivers Sub-Queue */}
@@ -1063,6 +1096,9 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* TAB 11: DATABASE & DATA STORAGE */}
+      {currentTab === 'database_storage' && <AdminDatabaseStorage />}
 
       {/* DETAILS REVIEW MODAL */}
       {selectedReviewDriver && (

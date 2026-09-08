@@ -4,17 +4,7 @@ import { InteractiveMap } from '../map/InteractiveMap';
 import { POPULAR_LOCATIONS } from '../../data/appData';
 import { useMobileGps } from '../../hooks/useMobileGps';
 import { TripRecord, RideRequestDoc } from '../../types';
-import { 
-  db, 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  setDoc, 
-  updateDoc, 
-  doc, 
-  sanitizeForFirestore 
-} from '../../lib/firebase';
+import { appDb } from '../../lib/supabase';
 import { 
   RotateCw, 
   Check, 
@@ -79,10 +69,10 @@ export const DriverDashboard: React.FC = () => {
   const [bannerCountdown, setBannerCountdown] = useState(12);
   const bannerTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 2. Earnings Summary derived from Firestore 'trips' collection
+  // 2. Earnings Summary derived from 'trips'
   const [completedTrips, setCompletedTrips] = useState<TripRecord[]>([]);
-  const [firestoreTotalEarnings, setFirestoreTotalEarnings] = useState<number>(0);
-  const [firestoreTodayEarnings, setFirestoreTodayEarnings] = useState<number>(0);
+  const [dashboardTotalEarnings, setDashboardTotalEarnings] = useState<number>(0);
+  const [dashboardTodayEarnings, setDashboardTodayEarnings] = useState<number>(0);
 
   const isOnline = driver?.isOnline ?? true;
 
@@ -138,7 +128,7 @@ export const DriverDashboard: React.FC = () => {
   }, [activeRide?.status]);
 
   // --------------------------------------------------------------------------
-  // FEATURE 1: Real-time Ride Request Notification Banner via Firestore Listener
+  // FEATURE 1: Real-time Ride Request Notification Banner
   // --------------------------------------------------------------------------
   useEffect(() => {
     if (!isOnline || !driver?.id) {
@@ -147,38 +137,23 @@ export const DriverDashboard: React.FC = () => {
       return;
     }
 
-    // Listen to 'rideRequests' collection where status is 'searching'
-    const rideRequestsRef = collection(db, 'rideRequests');
-    const q = query(rideRequestsRef, where('status', '==', 'searching'));
+    // Listen to 'rideRequests' where status is 'searching'
+    const unsubscribe = appDb.subscribe<RideRequestDoc>('rideRequests', (allRequests) => {
+      const matches = allRequests.filter(
+        (data) => data.status === 'searching' && (data.driverId === driver.id || data.driverId === 'all')
+      );
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const matches: RideRequestDoc[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data() as RideRequestDoc;
-          // Matches this driver or open broadcast to all
-          if (data.driverId === driver.id || data.driverId === 'all') {
-            matches.push(data);
-          }
-        });
+      if (matches.length > 0) {
+        matches.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        const newest = matches[0];
 
-        if (matches.length > 0) {
-          // Sort by newest
-          matches.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-          const newest = matches[0];
-
-          // Trigger banner alert
-          setIncomingRequest(newest);
-          setShowRequestBanner(true);
-          setBannerCountdown(12);
-          triggerSound('alert');
-        }
-      },
-      (error) => {
-        console.warn('rideRequests listener warning:', error);
+        // Trigger banner alert
+        setIncomingRequest(newest);
+        setShowRequestBanner(true);
+        setBannerCountdown(12);
+        triggerSound('alert');
       }
-    );
+    });
 
     return () => unsubscribe();
   }, [isOnline, driver?.id]);
@@ -213,8 +188,8 @@ export const DriverDashboard: React.FC = () => {
     setShowRequestBanner(false);
 
     try {
-      // 1. Mark request as accepted in Firestore
-      await updateDoc(doc(db, 'rideRequests', incomingRequest.id), {
+      // 1. Mark request as accepted in store
+      appDb.update('rideRequests', incomingRequest.id, {
         status: 'accepted',
         acceptedByDriverId: driver?.id || 'drv_general',
         acceptedAt: new Date().toISOString()
@@ -228,7 +203,7 @@ export const DriverDashboard: React.FC = () => {
     setJustAccepted(true);
   };
 
-  // Simulate an incoming ride request into Firestore for easy testing
+  // Simulate an incoming ride request for easy testing
   const handleSimulateIncomingRequest = async () => {
     if (!isOnline) {
       triggerSound('alert');
@@ -249,59 +224,48 @@ export const DriverDashboard: React.FC = () => {
   };
 
   // --------------------------------------------------------------------------
-  // FEATURE 2: Upgraded Earnings Summary dynamically derived from Firestore 'trips'
+  // FEATURE 2: Upgraded Earnings Summary dynamically derived from 'trips'
   // --------------------------------------------------------------------------
   useEffect(() => {
     if (!driver?.id) return;
 
-    // Real-time listener for trips collection in Firestore
-    const tripsRef = collection(db, 'trips');
-    const q = query(tripsRef, where('status', '==', 'completed'));
+    // Real-time listener for trips in Supabase-ready store
+    const unsubscribe = appDb.subscribe<TripRecord>('trips', (allTrips) => {
+      const records: TripRecord[] = [];
+      let total = 0;
+      let today = 0;
+      const todayStr = new Date().toDateString();
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const records: TripRecord[] = [];
-        let total = 0;
-        let today = 0;
-        const todayStr = new Date().toDateString();
+      allTrips.forEach((trip) => {
+        if (trip.status === 'completed' && (
+          trip.driverId === driver.id || 
+          trip.driverId === 'all' || 
+          (driver.id === 'drv_subhashish' && trip.driverId === 'drv_subhashish')
+        )) {
+          records.push(trip);
+          const amount = Number(trip.fare) || 0;
+          total += amount;
 
-        snapshot.forEach((docSnap) => {
-          const trip = docSnap.data() as TripRecord;
-          // Match this driver or general driver
-          if (
-            trip.driverId === driver.id || 
-            trip.driverId === 'all' || 
-            (driver.id === 'drv_subhashish' && trip.driverId === 'drv_subhashish')
-          ) {
-            records.push(trip);
-            const amount = Number(trip.fare) || 0;
-            total += amount;
-
-            if (trip.completedAt && new Date(trip.completedAt).toDateString() === todayStr) {
-              today += amount;
-            }
+          if (trip.completedAt && new Date(trip.completedAt).toDateString() === todayStr) {
+            today += amount;
           }
-        });
+        }
+      });
 
-        records.sort((a, b) => new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime());
-        setCompletedTrips(records);
+      records.sort((a, b) => new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime());
+      setCompletedTrips(records);
 
-        // Fallback seed calculation if Firestore collection has newly created driver
-        const effectiveTotal = records.length > 0 ? total : (driver.todayEarnings + 3840);
-        const effectiveToday = records.length > 0 ? today : (driver.todayEarnings || 1240);
-        setFirestoreTotalEarnings(effectiveTotal);
-        setFirestoreTodayEarnings(effectiveToday);
-      },
-      (error) => {
-        console.warn('trips listener error:', error);
-      }
-    );
+      // Seed calculation if fresh driver record
+      const effectiveTotal = records.length > 0 ? total : (driver.todayEarnings + 3840);
+      const effectiveToday = records.length > 0 ? today : (driver.todayEarnings || 1240);
+      setDashboardTotalEarnings(effectiveTotal);
+      setDashboardTodayEarnings(effectiveToday);
+    });
 
     return () => unsubscribe();
   }, [driver?.id, driver?.todayEarnings]);
 
-  // Simulate a completed trip directly in Firestore 'trips' collection
+  // Simulate a completed trip directly in 'trips' collection
   const handleSimulateCompletedTrip = async () => {
     if (!driver) return;
     setIsSimulatingTrip(true);
@@ -324,7 +288,7 @@ export const DriverDashboard: React.FC = () => {
     };
 
     try {
-      await setDoc(doc(db, 'trips', tripId), sanitizeForFirestore(newTrip));
+      appDb.set('trips', tripId, newTrip);
       confetti({ particleCount: 40, spread: 50, origin: { y: 0.3 } });
     } catch (err) {
       console.error('Failed to add simulated trip:', err);
@@ -333,7 +297,7 @@ export const DriverDashboard: React.FC = () => {
     }
   };
 
-  // Handle Online/Offline Status Toggle Switch and persist to Firestore
+  // Handle Online/Offline Status Toggle Switch and persist
   const handleToggleAvailability = async (forcedStatus?: boolean) => {
     if (isUpdatingStatus) return;
     const nextStatus = typeof forcedStatus === 'boolean' ? forcedStatus : !isOnline;
@@ -342,7 +306,7 @@ export const DriverDashboard: React.FC = () => {
     try {
       await setDriverOnlineStatus(nextStatus);
     } catch (err) {
-      console.error('Failed to update driver status in Firestore:', err);
+      console.error('Failed to update driver status:', err);
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -414,7 +378,7 @@ export const DriverDashboard: React.FC = () => {
       {activeNavTab === 'rides' ? (
         <DriverTripsPage
           trips={completedTrips}
-          totalEarnings={firestoreTotalEarnings}
+          totalEarnings={dashboardTotalEarnings}
           onNavigateHome={() => setActiveNavTab('home')}
         />
       ) : activeNavTab === 'profile' ? (
@@ -533,7 +497,7 @@ export const DriverDashboard: React.FC = () => {
             </div>
             <p className="text-xs text-neutral-500 mt-0.5">
               {isOnline 
-                ? 'Broadcasting live Toto beacon to nearby passengers in Firestore' 
+                ? 'Broadcasting live Toto beacon to nearby passengers' 
                 : 'Turn on to start receiving passenger ride bookings'}
             </p>
           </div>
@@ -574,17 +538,17 @@ export const DriverDashboard: React.FC = () => {
       </div>
 
       {/* -------------------------------------------------------------------------- */}
-      {/* FEATURE 2: UPGRADED EARNINGS SUMMARY CARD DERIVED FROM FIRESTORE 'TRIPS'    */}
+      {/* FEATURE 2: UPGRADED EARNINGS SUMMARY CARD                                  */}
       {/* -------------------------------------------------------------------------- */}
       <div 
         id="driver-earnings-summary-card"
         className="bg-[#141414] rounded-3xl p-5 text-white shadow-xs space-y-4 border border-neutral-800"
       >
-        {/* Top row: Label & Firestore Sync status */}
+        {/* Top row: Label & Sync status */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#888888]">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>TOTAL EARNINGS (FIRESTORE TRIPS)</span>
+            <span>TOTAL EARNINGS</span>
           </div>
 
 
@@ -594,10 +558,10 @@ export const DriverDashboard: React.FC = () => {
         <div className="flex items-baseline justify-between">
           <div>
             <div className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight flex items-center gap-1">
-              <span>₹{firestoreTotalEarnings}</span>
+              <span>₹{dashboardTotalEarnings}</span>
             </div>
             <div className="text-xs text-[#AAAAAA] mt-1 flex items-center gap-2">
-              <span>Today: <strong className="text-white">₹{firestoreTodayEarnings}</strong></span>
+              <span>Today: <strong className="text-white">₹{dashboardTodayEarnings}</strong></span>
               <span>•</span>
               <span>{completedTrips.length || driver?.totalTrips || 8} rides completed</span>
             </div>

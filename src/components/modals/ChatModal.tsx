@@ -1,16 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatMsg } from '../../types';
-import { 
-  db, 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  onSnapshot, 
-  addDoc, 
-  serverTimestamp,
-  sanitizeForFirestore 
-} from '../../lib/firebase';
+import { appDb } from '../../lib/supabase';
 import { 
   Send, 
   X, 
@@ -65,39 +55,16 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   const quickReplies = senderRole === 'user' ? QUICK_REPLIES_USER : QUICK_REPLIES_DRIVER;
 
-  // Real-time chat sync with Firestore
+  // Real-time chat sync with Supabase-ready data store
   useEffect(() => {
     if (!isOpen || !rideId) return;
 
-    const chatCol = collection(db, 'chat_messages');
-    const q = query(chatCol, where('rideId', '==', rideId));
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const msgs: ChatMsg[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          msgs.push({
-            id: docSnap.id,
-            rideId: data.rideId,
-            senderId: data.senderId,
-            senderName: data.senderName,
-            senderRole: data.senderRole,
-            text: data.text,
-            timestamp: data.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            read: !!data.read
-          });
-        });
-        // Sort chronologically
-        msgs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-        setMessages(msgs);
-        setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-      },
-      (err) => {
-        console.debug('Chat listener info:', err);
-      }
-    );
+    const unsubscribe = appDb.subscribe<ChatMsg>('chat_messages', (allMsgs) => {
+      const filtered = allMsgs.filter((m) => m.rideId === rideId);
+      filtered.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+      setMessages(filtered);
+      setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    });
 
     return () => unsubscribe();
   }, [isOpen, rideId]);
@@ -125,12 +92,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
 
     try {
-      await addDoc(collection(db, 'chat_messages'), sanitizeForFirestore({
-        ...newMsg,
-        createdAt: new Date().toISOString()
-      }));
+      appDb.set('chat_messages', newMsg.id, newMsg);
     } catch (err) {
-      console.debug('Firestore chat fallback to local state');
+      console.debug('Chat message save deferred:', err);
     } finally {
       setIsSending(false);
     }
