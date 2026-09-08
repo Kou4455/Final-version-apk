@@ -62,10 +62,10 @@ export const Header: React.FC = () => {
   return (
     <header 
       id="app-fixed-header"
-      className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-200 select-none ${
+      className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-200 select-none pt-[env(safe-area-inset-top,0px)] ${
         isScrolled 
-          ? 'bg-white/95 border-b border-[#E2DDD3] shadow-[0_4px_20px_rgba(0,0,0,0.06)] py-2' 
-          : 'bg-white/95 border-b border-[#EDE8E0] py-2.5'
+          ? 'bg-white/95 backdrop-blur-md border-b border-[#E2DDD3] shadow-[0_4px_20px_rgba(0,0,0,0.06)] py-1.5 sm:py-2' 
+          : 'bg-white/90 backdrop-blur-md border-b border-[#EDE8E0]/80 py-2 sm:py-2.5'
       }`}
     >
       {/* Dynamic Scroll Progress Bar along header bottom */}
@@ -76,8 +76,8 @@ export const Header: React.FC = () => {
         />
       </div>
 
-      {/* Internal scrolling workflow container */}
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 flex items-center justify-between gap-2.5 overflow-x-auto no-scrollbar scroll-smooth">
+      {/* Internal header content container */}
+      <div className="max-w-6xl mx-auto px-2.5 sm:px-6 flex items-center justify-between gap-1.5 sm:gap-2.5">
         {/* Left: Brand Logo & Title with scroll-to-top feature */}
         <div 
           onClick={() => { 
@@ -85,16 +85,16 @@ export const Header: React.FC = () => {
             triggerSound('beep');
             handleScrollToTop();
           }}
-          className="flex items-center gap-2.5 cursor-pointer group shrink-0"
+          className="flex items-center gap-2 sm:gap-2.5 cursor-pointer group shrink-0"
           title="Toto Drive Home (Click to navigate home & scroll to top)"
         >
           <AppLogo size="sm" />
           <div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-black text-base tracking-tight text-[#111111]">
+            <div className="flex items-center gap-1 sm:gap-1.5">
+              <span className="font-black text-sm sm:text-base tracking-tight text-[#111111]">
                 Toto<span className="text-[#E07A00]">Drive</span>
               </span>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full hidden sm:inline-block ${
+              <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full hidden xs:inline-block ${
                 activeRole === 'driver' 
                   ? 'text-[#C8622A] bg-[#FFF2E8] border border-[#FF6B2C]/30' 
                   : 'text-[#8C5200] bg-[#FFF3C4]'

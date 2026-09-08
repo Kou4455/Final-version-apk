@@ -296,7 +296,7 @@ export const FullScreenLocationSearchModal: React.FC<FullScreenLocationSearchMod
           style={{ height: '100dvh' }}
         >
           {/* Top Navigation Bar */}
-          <div className="w-full bg-white border-b border-[#EDE8E0] px-4 pt-3 pb-3 sm:py-3.5 flex items-center justify-between shadow-2xs z-10 shrink-0">
+          <div className="w-full bg-white border-b border-[#EDE8E0] px-3.5 sm:px-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-3 sm:py-3.5 flex items-center justify-between shadow-2xs z-10 shrink-0">
             <div className="flex items-center gap-3">
               <button
                 type="button"

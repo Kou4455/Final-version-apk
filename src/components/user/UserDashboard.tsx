@@ -13,6 +13,14 @@ import {
   MapPin, 
   ChevronDown, 
   ChevronUp,
+  ChevronRight,
+  ArrowLeft,
+  Pencil,
+  Plus,
+  Package,
+  Bike,
+  Car,
+  Layers,
   X, 
   ShieldCheck, 
   Navigation,
@@ -90,6 +98,30 @@ const TotoRickshawIcon = ({ className = "w-5 h-5", color = "#FF6B2C" }: { classN
     {/* Electric Bolt Accent on Body */}
     <path d="M22 29L20 32H24L22 35" stroke="#FFE600" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
+);
+
+const CitySkylineArt = () => (
+  <div className="w-full pt-4 pb-1 flex justify-center opacity-30 select-none pointer-events-none overflow-hidden">
+    <svg viewBox="0 0 400 50" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-w-xs sm:max-w-sm h-10 stroke-neutral-400">
+      <line x1="0" y1="46" x2="400" y2="46" strokeWidth="1" strokeDasharray="4 3" />
+      {/* Monument Gate */}
+      <path d="M50 46V25H70V46M56 46V32H64V46M46 25H74" strokeWidth="1.2" strokeLinecap="round" />
+      {/* Tree */}
+      <circle cx="100" cy="30" r="7" strokeWidth="1" />
+      <line x1="100" y1="37" x2="100" y2="46" strokeWidth="1.2" />
+      {/* Car Outline */}
+      <path d="M140 46H165C167 46 168 44 169 41L173 41C175 41 177 38 178 36L184 36C187 36 189 39 191 42L194 42C195 42 196 44 196 46" strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="150" cy="46" r="2.5" strokeWidth="1.2" />
+      <circle cx="186" cy="46" r="2.5" strokeWidth="1.2" />
+      {/* City Bridge Arches */}
+      <path d="M220 46C225 35 240 35 245 46C250 35 265 35 270 46" strokeWidth="1.2" />
+      {/* Toto Silhouette */}
+      <path d="M305 46H328L331 38H310L305 46Z" strokeWidth="1.2" />
+      <path d="M308 38V30H327V38" strokeWidth="1.2" />
+      <circle cx="310" cy="46" r="2.5" strokeWidth="1.2" />
+      <circle cx="325" cy="46" r="2.5" strokeWidth="1.2" />
+    </svg>
+  </div>
 );
 
 export const UserDashboard: React.FC = () => {
@@ -519,39 +551,61 @@ export const UserDashboard: React.FC = () => {
     rateRide(ratingScore, ratingComment);
   };
 
-  // Vehicle Tiers matching user specification
+  // Vehicle Tiers matching user specified categories
   const VEHICLE_TIERS = useMemo(() => [
     {
-      id: 'erickshaw',
-      name: 'E-Rickshaw (1 Person)',
-      capacity: '1 Person',
-      baseFare: 20,
+      id: 'bike',
+      name: 'E-Rickshaw',
+      badge: 'FASTEST',
+      badgeColor: 'bg-[#D8F3DC] text-[#1B4332]',
+      description: 'Quick shared & point-to-point ride',
+      capacity: '1-4',
+      etaMins: 2,
+      baseFare: 25,
+      perKmRate: 11,
+      type: 'e_rickshaw' as const,
+    },
+    {
+      id: 'personal_toto',
+      name: 'Toto Premium',
+      badge: 'POPULAR',
+      badgeColor: 'bg-[#FFF4ED] text-[#C8622A]',
+      description: 'Comfortable private electric ride',
+      capacity: '1-4',
+      etaMins: 3,
+      baseFare: 40,
       perKmRate: 14,
+      originalMultiplier: 1.15,
+      type: 'toto_premium' as const,
     },
     {
-      id: 'toto_premium',
-      name: 'Toto Premium (2 Person)',
-      capacity: '2 Person',
-      baseFare: 30,
+      id: 'cab_non_ac',
+      name: 'Toto Deluxe',
+      badge: 'EXTRA COMFORT',
+      badgeColor: 'bg-[#F0F4F8] text-[#243B53]',
+      description: 'Spacious cushioned seating & smooth ride',
+      capacity: '1-4',
+      etaMins: 4,
+      baseFare: 55,
       perKmRate: 16,
+      type: 'toto_deluxe' as const,
     },
     {
-      id: 'toto_deluxe',
-      name: 'Toto Deluxe (3 Person)',
-      capacity: '3 Person',
-      baseFare: 60,
-      perKmRate: 18,
-    },
-    {
-      id: 'full_reserve',
+      id: 'cab_ac_priority',
       name: 'Full Reserve Toto',
-      capacity: 'Full Reserve',
-      baseFare: 500,
+      badge: 'RESERVED',
+      isPriority: true,
+      badgeColor: 'bg-[#FEF3C7] text-[#92400E]',
+      description: 'Private dedicated Toto for you & family',
+      capacity: '4-6',
+      etaMins: 2,
+      baseFare: 75,
       perKmRate: 20,
+      type: 'full_reserve_toto' as const,
     },
   ], []);
 
-  const [selectedTierId, setSelectedTierId] = useState<string>('erickshaw');
+  const [selectedTierId, setSelectedTierId] = useState<string>('bike');
 
   const selectedTier = useMemo(() => {
     return VEHICLE_TIERS.find((t) => t.id === selectedTierId) || VEHICLE_TIERS[0];
@@ -583,13 +637,19 @@ export const UserDashboard: React.FC = () => {
   return (
     <div 
       id="user-dashboard-root-container"
-      className="max-w-lg md:max-w-xl mx-auto py-2 px-2.5 sm:px-4 space-y-3.5 flex-1 flex flex-col pointer-events-auto"
+      className={`mx-auto flex-1 flex flex-col pointer-events-auto w-full transition-all relative ${
+        activeNavTab === 'rides'
+          ? 'max-w-3xl py-1 sm:py-3 px-1.5 sm:px-4'
+          : activeNavTab === 'profile'
+          ? 'max-w-2xl py-1 sm:py-3 px-1.5 sm:px-4'
+          : 'w-full m-0 p-0'
+      }`}
     >
       {/* Top-screen Notification: Waiting for Captain to Accept */}
       {activeRide && activeRide.status === 'searching' && (
         <div 
           id="waiting-captain-notification"
-          className="fixed top-3 sm:top-5 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md bg-[#181818] text-white p-3.5 sm:p-4 rounded-3xl shadow-[0_12px_36px_rgba(0,0,0,0.35)] border border-[#333333] flex items-center justify-between gap-3 animate-in slide-in-from-top-4 duration-300"
+          className="fixed top-[calc(0.75rem+env(safe-area-inset-top,0px))] sm:top-[calc(1.25rem+env(safe-area-inset-top,0px))] left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md bg-[#181818] text-white p-3.5 sm:p-4 rounded-3xl shadow-[0_12px_36px_rgba(0,0,0,0.35)] border border-[#333333] flex items-center justify-between gap-3 animate-in slide-in-from-top-4 duration-300"
         >
           <div className="flex items-center gap-3 min-w-0">
             <div className="relative w-10 h-10 rounded-2xl bg-[#FFF4ED] border border-[#FFD8C2] flex items-center justify-center shrink-0">
@@ -628,7 +688,7 @@ export const UserDashboard: React.FC = () => {
       {captainAcceptedToast && activeRide && (
         <div 
           id="captain-accepted-notification"
-          className="fixed top-3 sm:top-5 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md bg-[#15803D] text-white p-3.5 sm:p-4 rounded-3xl shadow-[0_12px_36px_rgba(21,128,61,0.35)] border border-[#166534] flex items-center justify-between gap-3 animate-in slide-in-from-top-4 duration-300"
+          className="fixed top-[calc(0.75rem+env(safe-area-inset-top,0px))] sm:top-[calc(1.25rem+env(safe-area-inset-top,0px))] left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md bg-[#15803D] text-white p-3.5 sm:p-4 rounded-3xl shadow-[0_12px_36px_rgba(21,128,61,0.35)] border border-[#166534] flex items-center justify-between gap-3 animate-in slide-in-from-top-4 duration-300"
         >
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-white text-[#15803D] flex items-center justify-center shrink-0 shadow-xs">
@@ -730,396 +790,601 @@ export const UserDashboard: React.FC = () => {
         />
       ) : (
         <>
-          {/* Top Header Section: Search Bar */}
-          <div 
-            id="search-bar-map-container"
-            className="w-full"
-          >
-            {/* Dynamic Animated Capsule Search Bar matching search bar.jpeg */}
-            <div
-              id="dynamic-animated-search-bar"
-              onClick={() => {
-                triggerSound('beep');
-                setIsFullScreenSearchOpen(true);
-              }}
-              className="w-full bg-white hover:bg-[#FAF8F5] active:bg-[#F4F1EA] rounded-full border border-[#E2E8F0] hover:border-amber-300 shadow-xs py-3 sm:py-3.5 px-4 sm:px-5 flex items-center justify-between gap-3 transition-all cursor-pointer group relative overflow-hidden select-none"
-              title="Tap to search pickup and drop destinations across India"
-            >
-              {/* Subtle animated warm golden/amber glow line along bottom */}
-              <div className="absolute -bottom-px left-12 right-12 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-transparent opacity-85 group-hover:opacity-100 transition-opacity pointer-events-none" />
-
-              {/* Left Search Icon & Text */}
-              <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                <Search className="w-5 h-5 text-[#111111] shrink-0 group-hover:scale-105 transition-transform" />
-                <span className="text-base sm:text-lg font-bold text-[#111111] tracking-tight truncate">
-                  {dropoff?.name ? dropoff.name : 'Where do you want to go?'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-      {/* Real-time Interactive Leaflet Map with Mobile GPS Tracking */}
-      <InteractiveMap
-        pickup={pickup}
-        dropoff={dropoff}
-        activeRide={activeRide}
-        drivers={simulatedDrivers}
-        mode="user"
-        userGpsState={gpsState}
-        driverGpsState={driverGpsPoint ? {
-          lat: driverGpsPoint.lat,
-          lng: driverGpsPoint.lng,
-          accuracy: 10,
-          speedKmH: 22,
-          timestamp: Date.now(),
-          isWatching: true
-        } : null}
-        onSelectLocation={(point, type) => {
-          if (type === 'pickup') setPickup(point);
-          else setDropoff(point);
-          triggerSound('beep');
-        }}
-        onCenterGps={refreshCurrentLocation}
-        heightClass="h-[340px] sm:h-[380px] md:h-[420px]"
-      />
-
-      {/* Route & Booking Card (Only shown when not in an active or completed ride) */}
-      {(!activeRide || activeRide.status === 'cancelled' || activeRide.status === 'idle') && (
-      <div 
-        id="route-booking-card"
-        className="w-full bg-white rounded-3xl p-3.5 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-3.5 sm:space-y-4"
-      >
-        {/* Top Header with Minimize Toggle to Explore Full Map */}
-        <div className="flex items-center justify-between pb-1 -mt-1 border-b border-[#F4EFE6]">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#FF6B2C]" />
-            <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-              {isBookingCardCollapsed ? 'Ride Preview' : 'Select Ride'}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setIsBookingCardCollapsed(!isBookingCardCollapsed);
+          {/* Real-time Interactive Leaflet Map with Mobile GPS Tracking - Edge to Edge on Left, Right, Top */}
+          <InteractiveMap
+            pickup={pickup}
+            dropoff={dropoff}
+            activeRide={activeRide}
+            drivers={simulatedDrivers}
+            mode="user"
+            userGpsState={gpsState}
+            driverGpsState={driverGpsPoint ? {
+              lat: driverGpsPoint.lat,
+              lng: driverGpsPoint.lng,
+              accuracy: 10,
+              speedKmH: 22,
+              timestamp: Date.now(),
+              isWatching: true
+            } : null}
+            onSelectLocation={(point, type) => {
+              if (type === 'pickup') setPickup(point);
+              else setDropoff(point);
               triggerSound('beep');
             }}
-            className="text-[11px] text-gray-600 hover:text-black font-semibold flex items-center gap-1 py-1 px-2.5 rounded-full bg-neutral-100 hover:bg-neutral-200 transition-colors cursor-pointer"
-            title={isBookingCardCollapsed ? "Expand ride options" : "Minimize to view full map"}
+            onCenterGps={refreshCurrentLocation}
+            edgeToEdgeTop={true}
+            heightClass="h-[290px] xs:h-[320px] sm:h-[360px] md:h-[390px]"
           >
-            <span>{isBookingCardCollapsed ? 'Expand Options' : 'View Full Map'}</span>
-            {isBookingCardCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
-        </div>
-
-        {isBookingCardCollapsed ? (
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <div className="min-w-0">
-              <div className="text-xs sm:text-sm font-bold text-[#111111] truncate">
-                {VEHICLE_TIERS.find((t) => t.id === selectedTierId)?.name || 'Toto Eco'}
-              </div>
-              <div className="text-[11px] text-[#FF6B2C] font-extrabold">
-                ₹{currentFare} • {estimatedDistanceKm.toFixed(1)} km
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleBookToto}
-              disabled={isBroadcasting}
-              className="py-2.5 px-4 sm:px-5 bg-[#FF6B2C] hover:bg-[#E55A1F] text-white font-extrabold text-xs sm:text-sm rounded-2xl shadow-xs cursor-pointer active:scale-98 transition-all shrink-0"
-            >
-              Book Toto
-            </button>
-          </div>
-        ) : (
-          <>
-        {/* Vehicle / Ride Tier Selection Buttons (Matching user screenshot) */}
-        <div 
-          id="vehicle-tier-selection-list" 
-          className="space-y-2.5 pt-1 w-full"
-        >
-          {VEHICLE_TIERS.map((tier) => {
-            const isSelected = selectedTierId === tier.id;
-            const tierFare = tier.baseFare + Math.round(estimatedDistanceKm * tier.perKmRate);
-            return (
-              <button
-                key={tier.id}
-                id={`vehicle-tier-${tier.id}`}
-                type="button"
-                onClick={() => {
-                  setSelectedTierId(tier.id);
-                  triggerSound('beep');
-                }}
-                className={`w-full p-4 rounded-2xl sm:rounded-3xl text-left transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
-                  isSelected
-                    ? 'border-2 border-[#111111] bg-white shadow-xs'
-                    : 'border border-[#E5E5E5] bg-white hover:border-neutral-300 hover:bg-[#FAFAFA]'
-                }`}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className={`text-sm sm:text-[15px] font-bold tracking-tight ${
-                    isSelected ? 'text-[#111111]' : 'text-[#1F1F1F]'
-                  }`}>
-                    {tier.name}
-                  </div>
-                  <div className="text-xs sm:text-[13px] text-neutral-500 font-normal pt-1">
-                    Base: ₹{tier.baseFare} • Per KM: ₹{tier.perKmRate}
-                  </div>
-                </div>
-
-                <div className="text-right shrink-0">
-                  <div className="text-sm sm:text-base font-extrabold text-[#111111]">
-                    ₹{tierFare}
-                  </div>
-                  <div className="text-[10px] font-medium text-neutral-400">
-                    {estimatedDistanceKm} km
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Payment Method Selector Pills */}
-        <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-neutral-100 w-full">
-          <button
-            type="button"
-            onClick={() => setPaymentMethod('cash')}
-            className={`w-full min-h-[42px] py-1.5 px-2 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-              paymentMethod === 'cash'
-                ? 'bg-[#181818] text-white shadow-2xs'
-                : 'bg-[#F6F4F0] text-gray-600 hover:bg-[#EAE6DE]'
-            }`}
-          >
-            <CreditCard className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Cash</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setPaymentMethod('upi')}
-            className={`w-full min-h-[42px] py-1.5 px-2 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-              paymentMethod === 'upi'
-                ? 'bg-[#181818] text-white shadow-2xs'
-                : 'bg-[#F6F4F0] text-gray-600 hover:bg-[#EAE6DE]'
-            }`}
-          >
-            <QrCode className="w-3.5 h-3.5 text-[#FF6B2C] shrink-0" />
-            <span className="truncate">UPI QR</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setPaymentMethod('wallet');
-              if (walletBalance < currentFare) {
-                setIsWalletOpen(true);
-              }
-            }}
-            className={`w-full min-h-[42px] py-1.5 px-2 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-              paymentMethod === 'wallet'
-                ? 'bg-[#181818] text-white shadow-2xs'
-                : 'bg-[#F6F4F0] text-gray-600 hover:bg-[#EAE6DE]'
-            }`}
-          >
-            <Wallet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span className="truncate">Wallet (₹{walletBalance})</span>
-          </button>
-        </div>
-
-        {/* Coupons and Fare Breakdown Row */}
-        <div className="flex items-center justify-between text-xs pt-0.5 px-0.5 w-full">
-          <button
-            type="button"
-            onClick={() => { setIsCouponsOpen(true); triggerSound('beep'); }}
-            className="flex items-center gap-1 text-[#C8622A] hover:text-[#9E4616] font-bold cursor-pointer transition-colors min-h-[36px]"
-          >
-            <Tag className="w-3.5 h-3.5 text-[#FF6B2C] shrink-0" />
-            <span className="truncate">
-              {appliedCoupon ? `${appliedCoupon.code} (-₹${couponDiscount})` : 'Apply Coupon'}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setIsFareBreakdownOpen(true); triggerSound('beep'); }}
-            className="text-gray-600 hover:text-black font-semibold flex items-center gap-1 cursor-pointer transition-colors min-h-[36px]"
-          >
-            <span>Est. ₹{currentFare}</span>
-            <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          </button>
-        </div>
-
-        {/* Book Toto Button */}
-        <button
-          id="find-ride-btn"
-          type="button"
-          onClick={handleBookToto}
-          disabled={isBroadcasting || Boolean(activeRide && activeRide.status !== 'completed' && activeRide.status !== 'cancelled' && activeRide.status !== 'idle')}
-          className="w-full min-h-[50px] bg-[#141414] hover:bg-black active:scale-[0.99] text-white font-extrabold py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 text-sm sm:text-base shadow-[0_4px_14px_rgba(0,0,0,0.18)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.25)] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed group relative overflow-hidden"
-          title="Broadcast ride request to nearby Toto captains"
-        >
-          {isBroadcasting ? (
-            <>
-              <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
-              <span>Broadcasting to Captains...</span>
-            </>
-          ) : (
-            <>
-              <TotoRickshawIcon className="w-5 h-5 shrink-0 group-hover:scale-110 transition-transform" color="#FF6B2C" />
-              <span>Book Toto</span>
-              <span className="text-xs font-semibold text-neutral-400 font-mono ml-1">
-                • ₹{currentFare}
-              </span>
-            </>
-          )}
-        </button>
-
-        {/* Inline Section: Scanning Active Toto Partners */}
-        {isScanningOffers && (
-          <div className="pt-2 border-t border-neutral-100 animate-in fade-in duration-200 space-y-2.5">
-            <div className="bg-[#FAF8F5] border border-[#EBE5DB] rounded-2xl p-3.5 sm:p-4 text-center space-y-2.5">
-              <div className="relative w-12 h-12 mx-auto flex items-center justify-center">
-                <div className="absolute inset-0 rounded-full bg-[#FF6B2C]/15 animate-ping" />
-                <div className="w-11 h-11 rounded-2xl bg-[#FFF4ED] border border-[#FFD8C2] text-[#FF6B2C] flex items-center justify-center shadow-xs">
-                  <TotoRickshawIcon className="w-6 h-6 animate-bounce" color="#FF6B2C" />
-                </div>
-              </div>
-              <div className="space-y-0.5">
-                <div className="text-xs font-bold text-[#111111] flex items-center justify-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Scanning Active Nearby E-Rickshaws...</span>
-                </div>
-                <p className="text-[11px] text-gray-500">
-                  Fetching live driver price bids near {pickup?.name || 'pickup location'}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Inline Section: Active Nearby Toto Partners & Real-Time Price Offers */}
-        {!isScanningOffers && availableTotoOffers.length > 0 && (
-          <div className="pt-2.5 border-t border-neutral-100 animate-in fade-in slide-in-from-top-2 duration-300 space-y-2.5">
-            {/* Header with Toto Icon, Active Badge & Collapse Button */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#FFF4ED] border border-[#FFD8C2] flex items-center justify-center shrink-0 shadow-2xs">
-                  <TotoRickshawIcon className="w-4 h-4 sm:w-5 sm:h-5" color="#FF6B2C" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-xs font-extrabold text-[#111111] tracking-tight truncate">
-                    Nearby E-Rickshaw Partners
-                  </h3>
-                  <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                    <span className="truncate">{availableTotoOffers.length} Online Drivers • Live Bids</span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={cancelOfferSearch}
-                className="text-[11px] text-gray-500 hover:text-black font-semibold flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-neutral-100 transition-colors shrink-0 cursor-pointer"
-                title="Collapse list"
-              >
-                <span>Hide</span>
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* List of Available Driver Offers - Mobile Optimized */}
-            <div className="space-y-2 max-h-[340px] sm:max-h-[380px] overflow-y-auto pr-0.5 overscroll-contain">
-              {availableTotoOffers.map((offer) => (
-                <div
-                  key={offer.driverId}
-                  className="bg-[#FAF8F5] hover:bg-white border border-[#E5DFD4] hover:border-[#FF6B2C] rounded-2xl p-2.5 sm:p-3 space-y-2 transition-all shadow-2xs group"
+            {/* Map overlays when dropoff is selected */}
+            {dropoff && (
+              <>
+                {/* Top-Left Back Button to return to destination search */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDropoff(null);
+                    triggerSound('beep');
+                  }}
+                  className="absolute top-3 left-3 z-20 w-10 h-10 rounded-full bg-white text-gray-800 shadow-md border border-[#E5DFD4] flex items-center justify-center hover:bg-gray-100 active:scale-95 transition-all cursor-pointer"
+                  title="Clear destination and return to search"
                 >
-                  {/* Top Row: Driver Avatar with Toto Badge, Name, Vehicle & Price */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="relative shrink-0">
-                        <img
-                          src={offer.driverPhoto}
-                          alt={offer.driverName}
-                          referrerPolicy="no-referrer"
-                          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border border-neutral-200 shadow-2xs"
-                        />
-                        <div className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 shadow-2xs border border-neutral-100">
-                          <TotoRickshawIcon className="w-3 h-3" color="#FF6B2C" />
-                        </div>
-                      </div>
+                  <ArrowLeft className="w-5 h-5 text-[#181818]" />
+                </button>
 
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-[#111111] flex items-center gap-1">
-                          <span className="truncate">{offer.driverName}</span>
-                          <span className="text-[8px] sm:text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-md shrink-0">
-                            ✓
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-gray-500 font-mono leading-tight truncate">
-                          {offer.vehicleNumber}
-                        </div>
-                        <div className="text-[9.5px] text-[#C8622A] font-semibold truncate leading-tight">
-                          {offer.vehicleModel}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Price Column with Tag */}
-                    <div className="text-right shrink-0">
-                      <span className="inline-block text-[8.5px] sm:text-[9px] font-bold px-1.5 sm:px-2 py-0.5 bg-[#FFF4ED] text-[#C8622A] border border-[#FFD8C2] rounded-full mb-0.5">
-                        {offer.offerTag}
-                      </span>
-                      <div className="flex items-baseline justify-end gap-1">
-                        <span className="text-[11px] text-gray-400 line-through">
-                          ₹{offer.originalPrice}
-                        </span>
-                        <span className="text-base sm:text-lg font-black text-[#111111]">
-                          ₹{offer.price}
-                        </span>
-                      </div>
-                    </div>
+                {/* Top Center-Right Dropoff Location Pill */}
+                <div
+                  onClick={() => {
+                    triggerSound('beep');
+                    setIsFullScreenSearchOpen(true);
+                  }}
+                  className="absolute top-3 left-16 right-3 sm:right-auto sm:max-w-xs z-20 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-full border border-[#E5DFD4] shadow-md flex items-center justify-between gap-2 cursor-pointer hover:bg-white transition-colors select-none"
+                  title="Tap to change destination"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
+                    <span className="text-xs font-bold text-gray-900 truncate">
+                      {dropoff.name || dropoff.address}
+                    </span>
                   </div>
+                  <Pencil className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                </div>
 
-                  {/* Driver Stats: Rating, Battery %, Distance & ETA in 3 equal columns for mobile */}
-                  <div className="grid grid-cols-3 gap-1 text-[9.5px] sm:text-[10px] bg-white px-2 py-1.5 rounded-xl text-gray-600 font-medium border border-[#EDE8E0]">
-                    <div className="flex items-center justify-center gap-1 text-amber-700 font-bold truncate">
-                      <Star className="w-3 h-3 fill-amber-500 text-amber-500 shrink-0" />
-                      <span className="truncate">{offer.rating} ({offer.totalTrips})</span>
-                    </div>
-                    <div className="flex items-center justify-center gap-1 text-emerald-700 font-bold border-x border-neutral-100 px-1 truncate">
-                      <BatteryCharging className="w-3 h-3 shrink-0" />
-                      <span className="truncate">{offer.batteryPercentage}% ⚡</span>
-                    </div>
-                    <div className="flex items-center justify-center gap-1 text-blue-700 font-bold truncate">
-                      <Clock className="w-3 h-3 shrink-0" />
-                      <span className="truncate">{offer.etaMins}m ({offer.distanceMeters}m)</span>
-                    </div>
+                {/* Bottom Left Pickup Pill & Add Stop */}
+                <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 max-w-[calc(100%-64px)]">
+                  <div 
+                    onClick={() => {
+                      triggerSound('beep');
+                      setIsFullScreenSearchOpen(true);
+                    }}
+                    className="bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-full border border-[#E5DFD4] shadow-md flex items-center gap-1.5 cursor-pointer hover:bg-white transition-colors min-w-0 select-none"
+                    title="Tap to change pickup"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="text-xs font-semibold text-gray-800 truncate max-w-[120px] sm:max-w-[160px]">
+                      {pickup?.name || pickup?.address || 'Pickup'}
+                    </span>
+                    <Pencil className="w-3 h-3 text-gray-400 shrink-0" />
                   </div>
-
-                  {/* Action Button: Mobile friendly touch target */}
                   <button
                     type="button"
-                    onClick={() => handleSelectPartnerOffer(offer)}
-                    className="w-full min-h-[40px] py-2 px-3 bg-[#181818] group-hover:bg-[#FF6B2C] active:scale-[0.99] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                    onClick={() => {
+                      triggerSound('beep');
+                      setIsFullScreenSearchOpen(true);
+                    }}
+                    className="bg-white/95 backdrop-blur-md px-2.5 py-1.5 rounded-full border border-[#E5DFD4] shadow-md flex items-center gap-1 text-[11px] font-bold text-gray-700 hover:bg-white shrink-0 cursor-pointer"
                   >
-                    <TotoRickshawIcon className="w-4 h-4 shrink-0" color="#FFFFFF" />
-                    <span className="truncate">Select Partner • ₹{offer.price}</span>
+                    <Plus className="w-3 h-3 text-gray-600" />
+                    <span>Add stop</span>
                   </button>
                 </div>
-              ))}
+              </>
+            )}
+          </InteractiveMap>
+
+          {/* Lower Dashboard Controls & Cards Container */}
+          <div 
+            id="user-dashboard-content-container"
+            className="w-full max-w-none px-0 sm:px-4 sm:max-w-xl md:max-w-2xl sm:mx-auto space-y-3.5 flex-1 flex flex-col -mt-4 sm:-mt-6 relative z-10"
+          >
+            {/* Route & Booking Card (Only shown when not in an active or completed ride) */}
+            {(!activeRide || activeRide.status === 'cancelled' || activeRide.status === 'idle') && (
+            <div 
+              id="route-booking-card"
+              className="w-full bg-white rounded-t-3xl sm:rounded-3xl p-4 sm:p-5 pb-6 sm:pb-8 shadow-[0_-6px_24px_rgba(0,0,0,0.06)] border-t border-x-0 border-b-0 sm:border border-[#EDE8E0] space-y-4 max-h-[calc(100dvh-260px)] sm:max-h-[calc(100dvh-300px)] min-h-[350px] overflow-y-auto overflow-x-hidden scroll-smooth overscroll-y-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:thin] [scrollbar-color:#D6D1C7_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#D6D1C7] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#B8B2A6]"
+            >
+              {/* Centered Drag Handle */}
+              <div className="w-10 h-1 rounded-full bg-[#D6D1C7] mx-auto shrink-0 mb-1" />
+
+              {!dropoff ? (
+                /* STEP 1: Destination Search & Explore Options (Matching after login .jpeg & design.jpeg) */
+                <>
+                  {/* Dynamic Animated Destination Search Bar */}
+                  <div
+                    id="dynamic-animated-search-bar"
+                    onClick={() => {
+                      triggerSound('beep');
+                      setIsFullScreenSearchOpen(true);
+                    }}
+                    className="w-full bg-white rounded-full border border-[#E2E8F0] hover:border-amber-300 shadow-[0_4px_16px_rgba(0,0,0,0.06)] py-3 sm:py-3.5 px-4 sm:px-5 flex items-center justify-between gap-3 transition-all cursor-pointer group relative overflow-hidden select-none"
+                    title="Tap to search drop-off location"
+                  >
+                    {/* Subtle animated warm golden/amber glow line along bottom */}
+                    <div className="absolute -bottom-px left-8 right-8 h-[2px] bg-gradient-to-r from-transparent via-[#FFC000] to-transparent opacity-85 group-hover:opacity-100 transition-opacity pointer-events-none" />
+
+                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                      <Search className="w-5 h-5 text-[#111111] shrink-0 group-hover:scale-105 transition-transform" />
+                      <span className="text-[15px] sm:text-base font-extrabold text-[#111111] tracking-tight truncate">
+                        Where do you want to go?
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Explore Section */}
+                  <div className="space-y-2.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm sm:text-base font-extrabold text-[#111111] tracking-tight">Explore</h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerSound('beep');
+                          setIsFullScreenSearchOpen(true);
+                        }}
+                        className="text-xs font-bold text-gray-500 hover:text-black flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <span>View All</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-2">
+                      {/* Parcel on Toto */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerSound('beep');
+                          setIsFullScreenSearchOpen(true);
+                        }}
+                        className="flex flex-col items-center text-center p-2 rounded-2xl hover:bg-neutral-50 active:scale-95 transition-all cursor-pointer group"
+                      >
+                        <div className="w-12 h-12 rounded-2xl bg-[#FFF6E5] border border-[#FFE2A6] flex items-center justify-center text-[#B87214] shadow-xs group-hover:shadow-sm transition-all mb-1.5">
+                          <Package className="w-6 h-6" />
+                        </div>
+                        <span className="text-[11px] sm:text-xs font-bold text-gray-800 leading-tight">
+                          Parcel on Toto
+                        </span>
+                      </button>
+
+                      {/* Toto */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerSound('beep');
+                          setSelectedTierId('personal_toto');
+                          setIsFullScreenSearchOpen(true);
+                        }}
+                        className="flex flex-col items-center text-center p-2 rounded-2xl hover:bg-neutral-50 active:scale-95 transition-all cursor-pointer group"
+                      >
+                        <div className="w-12 h-12 rounded-2xl bg-[#E8F8EE] border border-[#C2EED4] flex items-center justify-center text-[#1E7E34] shadow-xs group-hover:shadow-sm transition-all mb-1.5">
+                          <TotoRickshawIcon className="w-6 h-6" color="#16A34A" />
+                        </div>
+                        <span className="text-[11px] sm:text-xs font-bold text-gray-800 leading-tight">
+                          Toto
+                        </span>
+                      </button>
+
+                      {/* Toto Reserve */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerSound('beep');
+                          setSelectedTierId('cab_ac_priority');
+                          setIsFullScreenSearchOpen(true);
+                        }}
+                        className="flex flex-col items-center text-center p-2 rounded-2xl hover:bg-neutral-50 active:scale-95 transition-all cursor-pointer group"
+                      >
+                        <div className="w-12 h-12 rounded-2xl bg-[#F0F4F8] border border-[#D9E2EC] flex items-center justify-center text-[#243B53] shadow-xs group-hover:shadow-sm transition-all mb-1.5">
+                          <TotoRickshawIcon className="w-6 h-6" color="#1E293B" />
+                        </div>
+                        <span className="text-[11px] sm:text-xs font-bold text-gray-800 leading-tight">
+                          Toto Reserve
+                        </span>
+                      </button>
+
+                      {/* Bulk Bookings */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerSound('beep');
+                          setIsScheduleOpen(true);
+                        }}
+                        className="flex flex-col items-center text-center p-2 rounded-2xl hover:bg-neutral-50 active:scale-95 transition-all cursor-pointer group"
+                      >
+                        <div className="w-12 h-12 rounded-2xl bg-[#F4EFFE] border border-[#E0D1FC] flex items-center justify-center text-[#6B46C1] shadow-xs group-hover:shadow-sm transition-all mb-1.5">
+                          <Layers className="w-6 h-6" />
+                        </div>
+                        <span className="text-[11px] sm:text-xs font-bold text-gray-800 leading-tight">
+                          Bulk Bookings
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Banner Section */}
+                  <div className="space-y-2.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm sm:text-base font-extrabold text-[#111111] tracking-tight">Banner</h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerSound('beep');
+                          setIsFullScreenSearchOpen(true);
+                        }}
+                        className="text-xs font-bold text-gray-500 hover:text-black flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <span>View All</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {/* Toto Reserve Card */}
+                      <div
+                        onClick={() => {
+                          triggerSound('beep');
+                          setSelectedTierId('personal_toto');
+                          setIsFullScreenSearchOpen(true);
+                        }}
+                        className="bg-[#E8F1FD] border border-[#D2E3FC] rounded-2xl p-3 sm:p-3.5 flex flex-col justify-between min-h-[95px] cursor-pointer hover:shadow-xs transition-all select-none group"
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <div>
+                            <div className="text-xs sm:text-sm font-black text-[#1E293B] group-hover:text-blue-700 transition-colors">
+                              Toto Reserve
+                            </div>
+                            <div className="text-[10px] text-gray-500 font-medium">
+                              Hourly private rides
+                            </div>
+                          </div>
+                          <div className="w-7 h-7 rounded-full bg-white/80 flex items-center justify-center shrink-0 shadow-2xs">
+                            <TotoRickshawIcon className="w-4 h-4" color="#2563EB" />
+                          </div>
+                        </div>
+                        <div className="pt-2">
+                          <span className="inline-block text-[9.5px] font-extrabold text-blue-700 bg-white/90 px-2 py-0.5 rounded-full border border-blue-200 shadow-2xs">
+                            Flexi Rides
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Bulk Bookings Card */}
+                      <div
+                        onClick={() => {
+                          triggerSound('beep');
+                          setIsScheduleOpen(true);
+                        }}
+                        className="bg-[#2D3748] text-white border border-[#4A5568] rounded-2xl p-3 sm:p-3.5 flex flex-col justify-between min-h-[95px] cursor-pointer hover:shadow-xs transition-all select-none group"
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <div>
+                            <div className="text-xs sm:text-sm font-black text-white group-hover:text-amber-300 transition-colors">
+                              Bulk Bookings
+                            </div>
+                            <div className="text-[10px] text-gray-300 font-medium">
+                              Events & tours
+                            </div>
+                          </div>
+                          <div className="w-7 h-7 rounded-full bg-neutral-700/80 flex items-center justify-center shrink-0 shadow-2xs">
+                            <TotoRickshawIcon className="w-4 h-4" color="#10B981" />
+                          </div>
+                        </div>
+                        <div className="pt-2">
+                          <span className="inline-block text-[9.5px] font-extrabold text-white bg-neutral-700 px-2 py-0.5 rounded-full border border-neutral-600 shadow-2xs">
+                            Fleet Discounts
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Skyline watermark illustration at bottom of sheet */}
+                  <CitySkylineArt />
+                </>
+              ) : (
+                /* STEP 2: Ride Selection Options (Matching after select drop location.jpeg) */
+                <>
+                  {/* Top Header with Ride Selector Title */}
+                  <div className="flex items-center justify-between pb-1 border-b border-[#F4EFE6]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#FF6B2C]" />
+                      <span className="text-xs font-bold text-gray-800 tracking-wide uppercase">
+                        Available Rides
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDropoff(null);
+                        triggerSound('beep');
+                      }}
+                      className="text-xs text-gray-500 hover:text-black font-semibold flex items-center gap-1 py-1 px-2.5 rounded-full bg-neutral-100 hover:bg-neutral-200 transition-colors cursor-pointer"
+                      title="Change destination"
+                    >
+                      <span>Change</span>
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Vehicle / Ride Tier Selection Buttons (Matching after select drop location.jpeg) */}
+                  <div 
+                    id="vehicle-tier-selection-list" 
+                    className="space-y-2.5 pt-0.5 w-full"
+                  >
+                    {VEHICLE_TIERS.map((tier) => {
+                      const isSelected = selectedTierId === tier.id;
+                      const tierFare = Math.max(15, tier.baseFare + Math.round(estimatedDistanceKm * tier.perKmRate) - couponDiscount);
+                      const originalFare = Math.round(tierFare * (tier.originalMultiplier || 1.14));
+                      const tripDurationMins = Math.max(3, Math.round(estimatedDistanceKm * 3));
+                      const dropTime = new Date(Date.now() + (tier.etaMins + tripDurationMins) * 60000)
+                        .toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+
+                      return (
+                        <div
+                          key={tier.id}
+                          id={`vehicle-tier-${tier.id}`}
+                          onClick={() => {
+                            setSelectedTierId(tier.id);
+                            triggerSound('beep');
+                          }}
+                          className={`w-full p-3.5 sm:p-4 rounded-2xl transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
+                            isSelected
+                              ? 'border-2 border-[#111111] bg-white shadow-xs'
+                              : 'border border-[#E5E5E5] bg-white hover:border-neutral-300 hover:bg-[#FAFAFA]'
+                          }`}
+                        >
+                          {/* Left: Vehicle Icon */}
+                          <div className="shrink-0 flex items-center justify-center w-10 sm:w-11">
+                            {tier.id === 'bike' ? (
+                              <div className="w-10 h-10 rounded-2xl bg-[#E8F8EE] border border-[#C2EED4] flex items-center justify-center shadow-2xs">
+                                <TotoRickshawIcon className="w-6 h-6" color="#16A34A" />
+                              </div>
+                            ) : tier.id === 'personal_toto' ? (
+                              <div className="w-10 h-10 rounded-2xl bg-[#FFF4ED] border border-[#FFD8C2] flex items-center justify-center shadow-2xs">
+                                <TotoRickshawIcon className="w-6 h-6" color="#FF6B2C" />
+                              </div>
+                            ) : tier.id === 'cab_non_ac' ? (
+                              <div className="w-10 h-10 rounded-2xl bg-[#F0F4F8] border border-[#D9E2EC] flex items-center justify-center shadow-2xs">
+                                <TotoRickshawIcon className="w-6 h-6" color="#243B53" />
+                              </div>
+                            ) : (
+                              <div className="w-10 h-10 rounded-2xl bg-[#FEF3C7] border border-[#FDE68A] flex items-center justify-center shadow-2xs relative">
+                                <TotoRickshawIcon className="w-6 h-6" color="#92400E" />
+                                <span className="absolute -top-1 -right-1 text-[8px] bg-amber-500 text-white font-black w-3.5 h-3.5 rounded-full flex items-center justify-center shadow-2xs">★</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Middle: Name, Badge, Description, ETA & Drop Time */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`text-sm sm:text-[15px] font-bold tracking-tight ${
+                                isSelected ? 'text-[#111111]' : 'text-[#1F1F1F]'
+                              }`}>
+                                {tier.name}
+                              </span>
+                              {tier.badge && (
+                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md tracking-wider ${tier.badgeColor || 'bg-[#D8F3DC] text-[#1B4332]'}`}>
+                                  {tier.badge}
+                                </span>
+                              )}
+                              {tier.isPriority && (
+                                <span className="text-[11px] text-amber-500 font-bold">✓</span>
+                              )}
+                            </div>
+                            <div className="text-[11px] sm:text-xs text-neutral-500 font-normal truncate">
+                              {tier.description}
+                            </div>
+                            <div className="text-[10.5px] sm:text-[11px] text-neutral-600 font-medium pt-0.5 flex items-center gap-1.5 flex-wrap">
+                              <span>{tier.etaMins} mins away</span>
+                              <span>•</span>
+                              <span>Drop {dropTime}</span>
+                              {tier.capacity && (
+                                <>
+                                  <span>•</span>
+                                  <span>👤 {tier.capacity}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Right: Fare */}
+                          <div className="text-right shrink-0">
+                            {tier.originalMultiplier && (
+                              <div className="text-[11px] text-gray-400 line-through">
+                                ₹{originalFare}
+                              </div>
+                            )}
+                            <div className="text-base sm:text-lg font-black text-[#111111]">
+                              ₹{tierFare}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Inline Section: Scanning Active Toto Partners */}
+                  {isScanningOffers && (
+                    <div className="pt-1 border-t border-neutral-100 animate-in fade-in duration-200 space-y-2.5">
+                      <div className="bg-[#FAF8F5] border border-[#EBE5DB] rounded-2xl p-3 sm:p-3.5 text-center space-y-2">
+                        <div className="relative w-10 h-10 mx-auto flex items-center justify-center">
+                          <div className="absolute inset-0 rounded-full bg-[#FF6B2C]/15 animate-ping" />
+                          <div className="w-9 h-9 rounded-xl bg-[#FFF4ED] border border-[#FFD8C2] text-[#FF6B2C] flex items-center justify-center shadow-xs">
+                            <TotoRickshawIcon className="w-5 h-5 animate-bounce" color="#FF6B2C" />
+                          </div>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className="text-xs font-bold text-[#111111] flex items-center justify-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            <span>Scanning Active Nearby Captains...</span>
+                          </div>
+                          <p className="text-[11px] text-gray-500">
+                            Fetching live driver price bids near pickup
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Inline Section: Active Nearby Toto Partners & Real-Time Price Offers */}
+                  {!isScanningOffers && availableTotoOffers.length > 0 && (
+                    <div className="pt-2 border-t border-neutral-100 animate-in fade-in slide-in-from-top-2 duration-300 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-7 h-7 rounded-xl bg-[#FFF4ED] border border-[#FFD8C2] flex items-center justify-center shrink-0 shadow-2xs">
+                            <TotoRickshawIcon className="w-4 h-4" color="#FF6B2C" />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-xs font-extrabold text-[#111111] tracking-tight truncate">
+                              Nearby Captain Bids
+                            </h3>
+                            <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                              <span className="truncate">{availableTotoOffers.length} Online Drivers • Live</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={cancelOfferSearch}
+                          className="text-[11px] text-gray-500 hover:text-black font-semibold flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-neutral-100 transition-colors shrink-0 cursor-pointer"
+                        >
+                          <span>Hide</span>
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-2 pr-0.5">
+                        {availableTotoOffers.map((offer) => (
+                          <div
+                            key={offer.driverId}
+                            className="bg-[#FAF8F5] hover:bg-white border border-[#E5DFD4] hover:border-[#FF6B2C] rounded-2xl p-2.5 sm:p-3 space-y-2 transition-all shadow-2xs group"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="relative shrink-0">
+                                  <img
+                                    src={offer.driverPhoto}
+                                    alt={offer.driverName}
+                                    referrerPolicy="no-referrer"
+                                    className="w-9 h-9 rounded-full object-cover border border-neutral-200 shadow-2xs"
+                                  />
+                                  <div className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 shadow-2xs border border-neutral-100">
+                                    <TotoRickshawIcon className="w-3 h-3" color="#FF6B2C" />
+                                  </div>
+                                </div>
+
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-[#111111] flex items-center gap-1">
+                                    <span className="truncate">{offer.driverName}</span>
+                                    <span className="text-[8px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-md shrink-0">
+                                      ✓
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-gray-500 font-mono leading-tight truncate">
+                                    {offer.vehicleNumber}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <span className="inline-block text-[8.5px] font-bold px-1.5 py-0.5 bg-[#FFF4ED] text-[#C8622A] border border-[#FFD8C2] rounded-full mb-0.5">
+                                  {offer.offerTag}
+                                </span>
+                                <div className="flex items-baseline justify-end gap-1">
+                                  <span className="text-[11px] text-gray-400 line-through">
+                                    ₹{offer.originalPrice}
+                                  </span>
+                                  <span className="text-base font-black text-[#111111]">
+                                    ₹{offer.price}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleSelectPartnerOffer(offer)}
+                              className="w-full min-h-[38px] py-1.5 px-3 bg-[#181818] group-hover:bg-[#FF6B2C] active:scale-[0.99] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                            >
+                              <TotoRickshawIcon className="w-4 h-4 shrink-0" color="#FFFFFF" />
+                              <span className="truncate">Select Partner • ₹{offer.price}</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Payment Method & Offers Quick Row (Matching after select drop location.jpeg) */}
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-neutral-100 w-full">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentMethod((prev) => (prev === 'cash' ? 'upi' : prev === 'upi' ? 'wallet' : 'cash'));
+                        triggerSound('beep');
+                      }}
+                      className="flex items-center gap-1.5 py-1.5 px-3 rounded-full bg-neutral-100 hover:bg-neutral-200 text-xs font-bold text-gray-800 transition-colors cursor-pointer"
+                      title="Change payment method"
+                    >
+                      <CreditCard className="w-3.5 h-3.5 text-gray-700" />
+                      <span className="capitalize">{paymentMethod}</span>
+                      <ChevronRight className="w-3 h-3 text-gray-500" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCouponsOpen(true);
+                        triggerSound('beep');
+                      }}
+                      className="flex items-center gap-1.5 py-1.5 px-3 rounded-full bg-neutral-100 hover:bg-neutral-200 text-xs font-bold text-gray-800 transition-colors cursor-pointer"
+                      title="View discount coupons"
+                    >
+                      <Tag className="w-3.5 h-3.5 text-[#FF6B2C]" />
+                      <span>{appliedCoupon ? `${appliedCoupon.code} (-₹${couponDiscount})` : '% Offers'}</span>
+                      <ChevronRight className="w-3 h-3 text-gray-500" />
+                    </button>
+                  </div>
+
+                  {/* Primary Bright Yellow Booking Button (Matching after select drop location.jpeg) */}
+                  <button
+                    id="find-ride-btn"
+                    type="button"
+                    onClick={handleBookToto}
+                    disabled={isBroadcasting || Boolean(activeRide && activeRide.status !== 'completed' && activeRide.status !== 'cancelled' && activeRide.status !== 'idle')}
+                    className="w-full min-h-[50px] bg-[#FFC000] hover:bg-[#F5B400] active:scale-[0.99] text-black font-black text-base py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed select-none"
+                    title={`Book ${selectedTier.name}`}
+                  >
+                    {isBroadcasting ? (
+                      <>
+                        <Loader2 className="w-5 h-5 text-black animate-spin" />
+                        <span>Connecting to Nearby Captains...</span>
+                      </>
+                    ) : (
+                      <span>Book {selectedTier.name}</span>
+                    )}
+                  </button>
+                </>
+              )}
             </div>
-          </div>
-        )}
-        </>
-        )}
-      </div>
-      )}
+            )}
 
       {/* Active Ride & Captain Details Section */}
       {activeRide && activeRide.status !== 'cancelled' && activeRide.status !== 'idle' && (
         <div 
           id="active-ride-card"
-          className="w-full space-y-3 shadow-xs animate-in fade-in duration-300"
+          className="w-full space-y-3 shadow-xs animate-in fade-in duration-300 px-2.5 sm:px-0"
         >
           {/* Status 1: Ride Requested / Searching for Nearby Captains */}
           {activeRide.status === 'searching' && (
@@ -1403,6 +1668,7 @@ export const UserDashboard: React.FC = () => {
           )}
         </div>
       )}
+      </div>
 
       {/* Location Picker Modal / Sheet */}
       {showLocationPicker && (

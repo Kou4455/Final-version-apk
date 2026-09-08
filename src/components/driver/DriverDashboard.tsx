@@ -374,7 +374,13 @@ export const DriverDashboard: React.FC = () => {
   };
 
   return (
-    <div className="w-full max-w-lg mx-auto py-2 px-3 sm:px-4 font-sans select-none space-y-4 flex-1">
+    <div className={`w-full mx-auto font-sans select-none flex-1 transition-all ${
+      activeNavTab === 'rides'
+        ? 'max-w-2xl py-1 sm:py-3 px-1.5 sm:px-4'
+        : activeNavTab === 'profile'
+        ? 'max-w-xl py-1 sm:py-3 px-1.5 sm:px-4'
+        : 'max-w-lg py-2 px-2.5 sm:px-4 space-y-4'
+    }`}>
       {activeNavTab === 'rides' ? (
         <DriverTripsPage
           trips={completedTrips}

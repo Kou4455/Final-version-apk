@@ -2,21 +2,57 @@
 @import "leaflet/dist/leaflet.css";
 
 @layer base {
-  html, body {
+  :root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+  }
+
+  html {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    width: 100%;
+    max-width: 100%;
     overflow-x: hidden;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background-color: #FAF8F5;
+    color: #111111;
+    -webkit-tap-highlight-color: transparent;
   }
 
-  body {
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    background-color: #F8F8F6;
-    color: #1A1A1A;
+  #root {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
   }
 
   h1, h2, h3, .font-serif-display {
     font-family: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
+  }
+
+  /* Prevent automatic zoom on input focus in iOS Safari when font-size is below 16px */
+  @media screen and (max-width: 768px) {
+    input[type="text"],
+    input[type="number"],
+    input[type="tel"],
+    input[type="email"],
+    input[type="password"],
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
   }
 }
 

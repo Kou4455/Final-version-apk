@@ -20,7 +20,8 @@ const MainAppContent: React.FC = () => {
     logoutUser, 
     logoutDriver, 
     isAdminAuthenticated,
-    triggerSound 
+    triggerSound,
+    activeNavTab,
   } = useRide();
   const [showSplash, setShowSplash] = useState(true);
 
@@ -41,22 +42,32 @@ const MainAppContent: React.FC = () => {
     );
   }
 
+  const isUserHomeMap = activeRole === 'user' && !!user && activeNavTab === 'home';
+
   return (
-    <div className="min-h-screen bg-[#FAF8F5] text-[#111111] flex flex-col font-sans selection:bg-[#FDE8DC] selection:text-[#C8622A] pt-[58px] sm:pt-[64px]">
+    <div className={`min-h-screen bg-[#FAF8F5] text-[#111111] flex flex-col font-sans selection:bg-[#FDE8DC] selection:text-[#C8622A] ${
+      isUserHomeMap
+        ? 'pt-0'
+        : 'pt-[calc(56px+env(safe-area-inset-top,0px))] sm:pt-[calc(64px+env(safe-area-inset-top,0px))]'
+    }`}>
       {/* Top Application Header */}
       <Header />
 
       {/* Main Screen Content Body */}
-      <main className="flex-1 w-full max-w-6xl mx-auto p-0 sm:p-4 md:p-6 pb-28 sm:pb-32 flex flex-col justify-start">
+      <main className={`flex-1 w-full pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))] sm:pb-28 flex flex-col justify-start ${
+        isUserHomeMap
+          ? 'max-w-none p-0'
+          : 'max-w-6xl mx-auto p-0 sm:p-3 md:p-6'
+      }`}>
         {/* Role 1: User / Passenger App View ("Where to next?") */}
         {activeRole === 'user' && (
           <div className="w-full flex-1 flex flex-col animate-in fade-in duration-300">
             {user ? (
-              <div className="w-full flex-1 flex flex-col p-1 sm:p-0">
+              <div className="w-full flex-1 flex flex-col p-0">
                 <UserDashboard />
               </div>
             ) : (
-              <div className="w-full flex-1 flex flex-col items-center justify-center p-0 sm:py-6">
+              <div className="w-full flex-1 flex flex-col items-center justify-center px-2 py-4 sm:py-6">
                 <UserLogin />
               </div>
             )}
@@ -67,11 +78,11 @@ const MainAppContent: React.FC = () => {
         {activeRole === 'driver' && (
           <div className="w-full flex-1 flex flex-col animate-in fade-in duration-300">
             {driver ? (
-              <div className="w-full flex-1 flex flex-col p-2 sm:p-0">
+              <div className="w-full flex-1 flex flex-col p-0">
                 <DriverDashboard />
               </div>
             ) : (
-              <div className="w-full flex-1 flex flex-col items-center justify-center p-0 sm:py-6">
+              <div className="w-full flex-1 flex flex-col items-center justify-center px-2 py-4 sm:py-6">
                 <DriverLogin
                   onBack={() => {
                     logoutDriver();

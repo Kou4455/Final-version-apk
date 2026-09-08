@@ -89,7 +89,7 @@ export const DriverProfilePage: React.FC<DriverProfilePageProps> = ({ onNavigate
   };
 
   return (
-    <div className="w-full space-y-4 pb-28 animate-in fade-in duration-200 select-none">
+    <div className="w-full space-y-3.5 sm:space-y-4 pb-12 sm:pb-16 animate-in fade-in duration-200 select-none">
       {/* Page Header */}
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-center gap-2.5">
