@@ -1,4 +1,4 @@
-import { GeoPoint, VehicleOption, DriverProfile, SimulatedDriverMarker } from '../types';
+import { GeoPoint, VehicleOption } from '../types';
 
 export const POPULAR_LOCATIONS: GeoPoint[] = [
   {
@@ -292,113 +292,6 @@ export const VEHICLE_OPTIONS: VehicleOption[] = [
     baseFare: 40,
     perKmRate: 20.0,
     description: 'Spacious auto with metered fare reliability'
-  }
-];
-
-// Initial verified Toto Partner drivers in Kolkata to seed Firestore if empty
-export const SEED_DRIVERS: DriverProfile[] = [
-  {
-    id: 'drv_subhashish',
-    name: 'Subhashish Mondal',
-    phone: '+91 98745 22019',
-    vehicleType: 'toto',
-    vehicleNumber: 'WB-06-ER-4821',
-    vehicleModel: 'GreenPower Lithium E-Toto Deluxe',
-    vehicleColor: 'Emerald Green',
-    pin: '1234',
-    approvalStatus: 'approved',
-    rating: 4.94,
-    totalTrips: 1248,
-    batteryPercentage: 92,
-    todayEarnings: 1240,
-    acceptanceRate: 98,
-    isOnline: true,
-    avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-    driverPhoto: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-    totoPhoto: 'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=320&auto=format&fit=crop&q=80',
-    totoPhotos: [
-      'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=320&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=320&auto=format&fit=crop&q=80'
-    ],
-    kycVerified: true,
-    currentLat: 22.5815,
-    currentLng: 88.4365,
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: 'drv_ratan',
-    name: 'Ratan Karmakar',
-    phone: '+91 98319 88301',
-    vehicleType: 'toto',
-    vehicleNumber: 'WB-25-ET-9104',
-    vehicleModel: 'CityRide Eco-Toto Plus',
-    vehicleColor: 'Canary Yellow',
-    pin: '1234',
-    approvalStatus: 'approved',
-    rating: 4.88,
-    totalTrips: 830,
-    batteryPercentage: 84,
-    todayEarnings: 840,
-    acceptanceRate: 94,
-    isOnline: true,
-    avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
-    driverPhoto: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
-    totoPhoto: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=320&auto=format&fit=crop&q=80',
-    totoPhotos: ['https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=320&auto=format&fit=crop&q=80'],
-    kycVerified: true,
-    currentLat: 22.5788,
-    currentLng: 88.4390,
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: 'drv_bappa',
-    name: 'Bappa Paul',
-    phone: '+91 98302 11984',
-    vehicleType: 'toto',
-    vehicleNumber: 'WB-08-ER-3921',
-    vehicleModel: 'Kinetic Green Zing E-Rickshaw',
-    vehicleColor: 'Electric Blue',
-    pin: '1234',
-    approvalStatus: 'approved',
-    rating: 4.92,
-    totalTrips: 1410,
-    batteryPercentage: 96,
-    todayEarnings: 1460,
-    acceptanceRate: 99,
-    isOnline: true,
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    driverPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    totoPhoto: 'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?w=320&auto=format&fit=crop&q=80',
-    totoPhotos: ['https://images.unsplash.com/photo-1511919884226-fd3cad34687c?w=320&auto=format&fit=crop&q=80'],
-    kycVerified: true,
-    currentLat: 22.5835,
-    currentLng: 88.4340,
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: 'drv_joydeb',
-    name: 'Joydeb Das',
-    phone: '+91 98366 45091',
-    vehicleType: 'toto',
-    vehicleNumber: 'WB-02-ER-7712',
-    vehicleModel: 'Saarthi Shavak E-Rickshaw',
-    vehicleColor: 'Saffron Orange',
-    pin: '1234',
-    approvalStatus: 'approved',
-    rating: 4.82,
-    totalTrips: 650,
-    batteryPercentage: 78,
-    todayEarnings: 720,
-    acceptanceRate: 92,
-    isOnline: true,
-    avatarUrl: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=150&auto=format&fit=crop&q=80',
-    driverPhoto: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=150&auto=format&fit=crop&q=80',
-    totoPhoto: 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=320&auto=format&fit=crop&q=80',
-    totoPhotos: ['https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=320&auto=format&fit=crop&q=80'],
-    kycVerified: true,
-    currentLat: 22.5850,
-    currentLng: 88.4395,
-    updatedAt: new Date().toISOString()
   }
 ];
 

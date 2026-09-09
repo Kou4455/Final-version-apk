@@ -42,15 +42,15 @@ export const AdminRidesManagement: React.FC = () => {
   // Create Ride Modal
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newRideForm, setNewRideForm] = useState({
-    userName: 'Subrata Naskar',
-    userPhone: '+91 98301 45289',
-    driverName: 'Bikram Naskar',
-    driverPhone: '+91 98314 55029',
-    vehicleNumber: 'WB-24-ER-8841',
-    pickupName: 'Sector V Metro Station (Gate 2)',
-    dropoffName: 'City Centre 1 Mall',
-    fare: 35,
-    paymentMethod: 'upi' as 'cash' | 'upi' | 'wallet',
+    userName: '',
+    userPhone: '+91 ',
+    driverName: '',
+    driverPhone: '+91 ',
+    vehicleNumber: '',
+    pickupName: '',
+    dropoffName: '',
+    fare: 30,
+    paymentMethod: 'cash' as 'cash' | 'upi' | 'wallet',
     status: 'completed' as 'completed' | 'in_progress' | 'cancelled'
   });
 

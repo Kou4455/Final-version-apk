@@ -52,26 +52,14 @@ export const AdminNotifications: React.FC = () => {
   const [isSending, setIsSending] = useState(false);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
-  const [history, setHistory] = useState<NotificationBroadcast[]>([
-    {
-      id: 'notif_1',
-      title: 'Morning Rush Surge Live',
-      message: 'High demand at Sector V Metro Gate 2. Captains earn ₹15 extra per ride.',
-      target: 'drivers',
-      zone: 'Sector V Metro',
-      sentAt: 'Today, 08:30 AM',
-      deliveryCount: 48
-    },
-    {
-      id: 'notif_2',
-      title: 'Welcome to Toto Drive Green Fleet!',
-      message: 'Zero emissions, silent rides, guaranteed neighborhood mobility.',
-      target: 'customers',
-      zone: 'All Kolkata Zones',
-      sentAt: 'Yesterday, 10:00 AM',
-      deliveryCount: 1420
+  const [history, setHistory] = useState<NotificationBroadcast[]>(() => {
+    try {
+      const stored = localStorage.getItem('toto_broadcast_history');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
     }
-  ]);
+  });
 
   const handleApplyTemplate = (tmpl: typeof PRESET_TEMPLATES[0]) => {
     triggerSound('beep');
@@ -96,16 +84,22 @@ export const AdminNotifications: React.FC = () => {
         target: targetAudience,
         zone: targetZone,
         sentAt: 'Just now',
-        deliveryCount: targetAudience === 'drivers' ? 48 : targetAudience === 'customers' ? 1420 : 1468
+        deliveryCount: 1
       };
 
-      setHistory([newBroadcast, ...history]);
+      setHistory((prev) => {
+        const next = [newBroadcast, ...prev];
+        try {
+          localStorage.setItem('toto_broadcast_history', JSON.stringify(next.slice(0, 50)));
+        } catch {}
+        return next;
+      });
       setIsSending(false);
       setTitle('');
       setMessage('');
-      setSuccessNotice(`Broadcast dispatched to ${newBroadcast.deliveryCount} recipients!`);
+      setSuccessNotice(`Broadcast dispatched successfully!`);
       triggerSound('success');
-    }, 600);
+    }, 400);
   };
 
   return (

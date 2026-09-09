@@ -68,6 +68,7 @@ import { CouponsModal } from '../modals/CouponsModal';
 import { FullScreenLocationSearchModal } from './FullScreenLocationSearchModal';
 import { RideHistoryPage } from './RideHistoryPage';
 import { ProfileSettingsPage } from './ProfileSettingsPage';
+import { useBackHandler } from '../../hooks/useBackHandler';
 
 const TotoRickshawIcon = ({ className = "w-5 h-5", color = "#FF6B2C" }: { className?: string; color?: string }) => (
   <svg 
@@ -220,6 +221,33 @@ export const UserDashboard: React.FC = () => {
   const [receiptRideData, setReceiptRideData] = useState<ActiveRide | null>(null);
   const [supportRideId, setSupportRideId] = useState<string | undefined>(undefined);
   const [isBookingCardCollapsed, setIsBookingCardCollapsed] = useState(false);
+
+  // Mobile Android/iOS System Back Navigation Handlers
+  useBackHandler('user:modal:search', isFullScreenSearchOpen, () => setIsFullScreenSearchOpen(false), 25);
+  useBackHandler('user:modal:wallet', isWalletOpen, () => setIsWalletOpen(false), 25);
+  useBackHandler('user:modal:coupons', isCouponsOpen, () => setIsCouponsOpen(false), 25);
+  useBackHandler('user:modal:safety', isSafetyOpen, () => setIsSafetyOpen(false), 25);
+  useBackHandler('user:modal:schedule', isScheduleOpen, () => setIsScheduleOpen(false), 25);
+  useBackHandler('user:modal:savedPlaces', isSavedPlacesOpen, () => setIsSavedPlacesOpen(false), 25);
+  useBackHandler('user:modal:support', isSupportOpen, () => setIsSupportOpen(false), 25);
+  useBackHandler('user:modal:sos', isSosOpen, () => setIsSosOpen(false), 30);
+  useBackHandler('user:modal:chat', isChatOpen, () => setIsChatOpen(false), 25);
+  useBackHandler('user:modal:share', isShareTripOpen, () => setIsShareTripOpen(false), 25);
+  useBackHandler('user:modal:receipt', isReceiptOpen, () => setIsReceiptOpen(false), 25);
+  useBackHandler('user:modal:rating', isRatingOpen, () => setIsRatingOpen(false), 25);
+  useBackHandler('user:modal:fare', isFareBreakdownOpen, () => setIsFareBreakdownOpen(false), 25);
+  
+  // Back from Ride Select view to Destination Search/Explore view
+  useBackHandler(
+    'user:ride:select',
+    Boolean(dropoff && (!activeRide || activeRide.status === 'cancelled' || activeRide.status === 'idle')),
+    () => setDropoff(null),
+    15
+  );
+
+  // Tabs back handlers (return to 'home' tab)
+  useBackHandler('user:tab:rides', activeNavTab === 'rides', () => setActiveNavTab('home'), 10);
+  useBackHandler('user:tab:profile', activeNavTab === 'profile', () => setActiveNavTab('home'), 10);
   
   // Real-Time Mobile GPS Tracking Hook
   const {
@@ -813,7 +841,7 @@ export const UserDashboard: React.FC = () => {
             }}
             onCenterGps={refreshCurrentLocation}
             edgeToEdgeTop={true}
-            heightClass="h-[290px] xs:h-[320px] sm:h-[360px] md:h-[390px]"
+            heightClass={dropoff ? "h-[200px] xs:h-[220px] sm:h-[280px] md:h-[340px]" : "h-[280px] xs:h-[300px] sm:h-[340px] md:h-[380px]"}
           >
             {/* Map overlays when dropoff is selected */}
             {dropoff && (
@@ -884,13 +912,13 @@ export const UserDashboard: React.FC = () => {
           {/* Lower Dashboard Controls & Cards Container */}
           <div 
             id="user-dashboard-content-container"
-            className="w-full max-w-none px-0 sm:px-4 sm:max-w-xl md:max-w-2xl sm:mx-auto space-y-3.5 flex-1 flex flex-col -mt-4 sm:-mt-6 relative z-10"
+            className="w-full max-w-none px-0 sm:px-4 sm:max-w-xl md:max-w-2xl sm:mx-auto space-y-3.5 flex-1 flex flex-col mt-0 relative z-10"
           >
             {/* Route & Booking Card (Only shown when not in an active or completed ride) */}
             {(!activeRide || activeRide.status === 'cancelled' || activeRide.status === 'idle') && (
             <div 
               id="route-booking-card"
-              className="w-full bg-white rounded-t-3xl sm:rounded-3xl p-4 sm:p-5 pb-6 sm:pb-8 shadow-[0_-6px_24px_rgba(0,0,0,0.06)] border-t border-x-0 border-b-0 sm:border border-[#EDE8E0] space-y-4 max-h-[calc(100dvh-260px)] sm:max-h-[calc(100dvh-300px)] min-h-[350px] overflow-y-auto overflow-x-hidden scroll-smooth overscroll-y-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:thin] [scrollbar-color:#D6D1C7_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#D6D1C7] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#B8B2A6]"
+              className="w-full bg-white rounded-none sm:rounded-b-2xl sm:rounded-t-none p-4 sm:p-5 pb-8 sm:pb-8 shadow-xs border-t border-[#EDE8E0] sm:border-x sm:border-b sm:border-[#EDE8E0] space-y-4 max-h-[calc(100dvh-175px)] sm:max-h-[calc(100dvh-230px)] min-h-[280px] overflow-y-auto overflow-x-hidden scroll-smooth touch-pan-y [overscroll-behavior-y:contain] [-webkit-overflow-scrolling:touch] [scrollbar-width:thin] [scrollbar-color:#D6D1C7_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#D6D1C7] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#B8B2A6]"
             >
               {/* Centered Drag Handle */}
               <div className="w-10 h-1 rounded-full bg-[#D6D1C7] mx-auto shrink-0 mb-1" />
@@ -1117,7 +1145,7 @@ export const UserDashboard: React.FC = () => {
                   {/* Vehicle / Ride Tier Selection Buttons (Matching after select drop location.jpeg) */}
                   <div 
                     id="vehicle-tier-selection-list" 
-                    className="space-y-2.5 pt-0.5 w-full"
+                    className="space-y-2.5 pt-0.5 w-full max-h-[240px] xs:max-h-[270px] sm:max-h-[320px] md:max-h-none overflow-y-auto overscroll-contain pr-1 [-webkit-overflow-scrolling:touch] touch-pan-y [scrollbar-width:thin] [scrollbar-color:#D6D1C7_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#D6D1C7] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#B8B2A6]"
                   >
                     {VEHICLE_TIERS.map((tier) => {
                       const isSelected = selectedTierId === tier.id;

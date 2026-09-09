@@ -18,9 +18,12 @@ export const BottomNavigation: React.FC = () => {
   ];
 
   return (
-    <nav className="fixed bottom-3 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.25rem)] sm:w-auto max-w-sm sm:max-w-md select-none pointer-events-auto pb-[env(safe-area-inset-bottom,0px)]">
-      {/* Outer Floating Pill Capsule Container (CSS selector 2 target) */}
-      <div className="flex items-center justify-between w-full sm:w-auto gap-1 sm:gap-2 p-1.5 sm:p-2 rounded-full bg-[#FFFDF9]/95 backdrop-blur-xl border border-[#EDE6D8] shadow-[0_12px_40px_rgba(30,20,10,0.12),0_4px_14px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.03]">
+    <nav 
+      aria-label="App Navigation"
+      className="fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))] sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.5rem)] sm:w-auto max-w-sm sm:max-w-md select-none pointer-events-none mb-1"
+    >
+      {/* Outer Floating Pill Capsule Container */}
+      <div className="pointer-events-auto flex items-center justify-between w-full sm:w-auto gap-1 sm:gap-2 p-1.5 sm:p-2 rounded-full bg-[#FFFDF9]/95 backdrop-blur-xl border border-[#EDE6D8] shadow-[0_12px_40px_rgba(30,20,10,0.12),0_4px_14px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.03]">
         {navItems.map((item) => {
           const isActive = activeNavTab === item.id;
           return (

@@ -27,7 +27,6 @@ interface DynamicRideStatusIndicatorProps {
   onOpenShareTrip?: () => void;
   onOpenSos?: () => void;
   onOpenSafety?: () => void;
-  onAdvanceStage?: () => void; // Quick progression helper for instant demo testing
 }
 
 type StageType = 'looking' | 'en_route' | 'in_progress' | 'completed';
@@ -40,7 +39,6 @@ export const DynamicRideStatusIndicator: React.FC<DynamicRideStatusIndicatorProp
   onOpenShareTrip,
   onOpenSos,
   onOpenSafety,
-  onAdvanceStage,
 }) => {
   // Determine current active stage index and key
   const currentStage: StageType = useMemo(() => {
@@ -380,18 +378,6 @@ export const DynamicRideStatusIndicator: React.FC<DynamicRideStatusIndicatorProp
               >
                 <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
                 <span>Chat</span>
-              </button>
-            )}
-
-            {/* Advance stage button if arrived or testing */}
-            {onAdvanceStage && activeRide.status === 'driver_arrived' && (
-              <button
-                type="button"
-                onClick={onAdvanceStage}
-                className="min-h-[42px] py-2 px-3 bg-[#141414] hover:bg-black text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1 transition-all cursor-pointer shadow-xs active:scale-98 shrink-0"
-              >
-                <Zap className="w-3.5 h-3.5 text-[#FF6B2C]" />
-                <span>Start Trip</span>
               </button>
             )}
           </div>

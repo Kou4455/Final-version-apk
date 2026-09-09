@@ -17,7 +17,6 @@ import {
   ScheduledRide
 } from '../types';
 import { 
-  SEED_DRIVERS, 
   VEHICLE_OPTIONS, 
   PROMO_CODES
 } from '../data/appData';
@@ -43,6 +42,17 @@ import {
   upsertSupabaseDriver,
   deleteSupabaseDriver
 } from '../services/supabaseService';
+import {
+  fetchAdminStatus,
+  setupInitialAdmin,
+  loginAdminApi,
+  verifyAdminSessionApi,
+  changeAdminUsernameApi,
+  changeAdminPasswordApi,
+  logoutAdminApi,
+  logoutAllAdminSessionsApi,
+  AdminSafeProfile
+} from '../services/adminAuthService';
 
 interface RideContextType {
   user: UserProfile | null;
@@ -142,13 +152,18 @@ interface RideContextType {
   completedTrips: TripRecord[];
   rateRideWithTags: (stars: number, compliments: string[], review: string) => Promise<void>;
 
-  // Admin authentication state & methods
+  // Admin authentication state & methods (Single Admin Account System)
   isAdminAuthenticated: boolean;
+  adminProfile: AdminSafeProfile | null;
+  adminExistsState: boolean;
   adminCredentials: { username: string; passwordHash: string; updatedAt?: string };
+  refreshAdminStatus: () => Promise<void>;
+  setupInitialAdminAccount: (username: string, password: string, confirmPassword: string) => Promise<{ success: boolean; message: string }>;
   loginAdmin: (userId: string, password: string) => Promise<{ success: boolean; message: string }>;
-  logoutAdmin: () => void;
-  updateAdminCredentials: (newUsername: string, newPassword: string, currentPassword?: string) => { success: boolean; message: string };
-  updateAdminPassword: (newPassword: string) => { success: boolean; message: string };
+  logoutAdmin: () => Promise<void>;
+  logoutAllAdminSessions: () => Promise<{ success: boolean; message: string }>;
+  updateAdminCredentials: (newUsername: string, newPassword: string, currentPassword?: string) => Promise<{ success: boolean; message: string }> | { success: boolean; message: string };
+  updateAdminPassword: (newPassword: string, currentPassword?: string) => Promise<{ success: boolean; message: string }> | { success: boolean; message: string };
 
   // Supabase Database collections & management
   allUsers: UserProfile[];
@@ -245,10 +260,31 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null; // By default require captain sign-in / PIN authentication
   });
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [activeRole, setActiveRole] = useState<AppRole>('user');
+  const [activeRole, setActiveRoleState] = useState<AppRole>(() => {
+    try {
+      const savedRole = localStorage.getItem('toto_active_role');
+      if (savedRole === 'driver' || savedRole === 'admin' || savedRole === 'user') {
+        return savedRole as AppRole;
+      }
+      const savedDriver = localStorage.getItem('toto_saved_driver');
+      if (savedDriver) {
+        return 'driver';
+      }
+    } catch (e) {
+      console.warn('Error reading saved activeRole:', e);
+    }
+    return 'user';
+  });
+
+  const setActiveRole = useCallback((role: AppRole) => {
+    setActiveRoleState(role);
+    try {
+      localStorage.setItem('toto_active_role', role);
+    } catch {}
+  }, []);
   const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
   const [pendingDriverRequest, setPendingDriverRequest] = useState<ActiveRide | null>(null);
-  const [onlineDrivers, setOnlineDrivers] = useState<DriverProfile[]>(SEED_DRIVERS);
+  const [onlineDrivers, setOnlineDrivers] = useState<DriverProfile[]>([]);
   const [userGpsPoint, setUserGpsPoint] = useState<GeoPoint | null>(null);
   const [driverGpsPoint, setDriverGpsPoint] = useState<GeoPoint | null>(null);
   const [availableTotoOffers, setAvailableTotoOffers] = useState<TotoPartnerOffer[]>([]);
@@ -270,29 +306,85 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [driverApprovals, setDriverApprovals] = useState<DriverApprovalRequest[]>([]);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
 
-  // Admin authentication state (supports default Username: "Admin", Password: "Admin", with ability to update credentials in future)
+  // Admin authentication state (Single Administrator Account System)
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     return localStorage.getItem('toto_admin_authenticated') === 'true';
   });
+
+  const [adminProfile, setAdminProfile] = useState<AdminSafeProfile | null>(null);
+  const [adminExistsState, setAdminExistsState] = useState<boolean>(true);
 
   const [adminCredentials, setAdminCredentials] = useState<{ username: string; passwordHash: string; updatedAt?: string }>(() => {
     const saved = localStorage.getItem('toto_admin_credentials');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed.username === 'string' && typeof parsed.passwordHash === 'string') {
-          // If stored credentials were old legacy "admin.admin", migrate seamlessly to "Admin" / "Admin"
-          if (parsed.username.toLowerCase() === 'admin' && parsed.passwordHash === 'admin.admin') {
-            return { username: 'Admin', passwordHash: 'Admin', updatedAt: new Date().toISOString() };
-          }
-          return parsed;
+        if (parsed && typeof parsed.username === 'string') {
+          return { username: parsed.username, passwordHash: '••••••••', updatedAt: parsed.updatedAt || new Date().toISOString() };
         }
       } catch (e) {
         console.error('Error parsing admin credentials:', e);
       }
     }
-    return { username: 'Admin', passwordHash: 'Admin', updatedAt: new Date().toISOString() };
+    return { username: 'Admin', passwordHash: '••••••••', updatedAt: new Date().toISOString() };
   });
+
+  const refreshAdminStatus = useCallback(async () => {
+    try {
+      const status = await fetchAdminStatus();
+      setAdminExistsState(status.admin_exists);
+      if (status.admin_exists) {
+        // Attempt session verification
+        const session = await verifyAdminSessionApi();
+        if (session.authenticated && session.admin) {
+          setIsAdminAuthenticated(true);
+          setAdminProfile(session.admin);
+          setAdminCredentials({
+            username: session.admin.username,
+            passwordHash: '••••••••',
+            updatedAt: session.admin.updated_at
+          });
+          localStorage.setItem('toto_admin_authenticated', 'true');
+        } else {
+          setIsAdminAuthenticated(false);
+          localStorage.removeItem('toto_admin_authenticated');
+        }
+      } else {
+        setIsAdminAuthenticated(false);
+        localStorage.removeItem('toto_admin_authenticated');
+      }
+    } catch (err) {
+      console.warn('Could not refresh admin status:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshAdminStatus();
+  }, [refreshAdminStatus]);
+
+  const setupInitialAdminAccount = async (
+    username: string, 
+    password: string, 
+    confirmPassword: string
+  ): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await setupInitialAdmin({ username, password, confirmPassword });
+      setAdminExistsState(true);
+      if (res.admin) {
+        setAdminProfile(res.admin);
+        setAdminCredentials({
+          username: res.admin.username,
+          passwordHash: '••••••••',
+          updatedAt: res.admin.updated_at
+        });
+      }
+      playChime('success');
+      return { success: true, message: res.message };
+    } catch (err: any) {
+      playChime('alert');
+      return { success: false, message: err.message || 'Failed to setup administrator account.' };
+    }
+  };
 
   const loginAdmin = async (userIdInput: string, passwordInput: string): Promise<{ success: boolean; message: string }> => {
     const cleanId = userIdInput.trim();
@@ -302,84 +394,98 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: 'Please enter both Admin username and password.' };
     }
 
-    // Default username is "Admin" (case-insensitive for convenience)
-    const storedUser = adminCredentials.username || 'Admin';
-    const isUserMatch = 
-      cleanId.toLowerCase() === storedUser.toLowerCase() || 
-      cleanId.toLowerCase() === 'admin';
-
-    // Default password is "Admin" (also gracefully matches 'admin' or custom updated password)
-    const storedPass = adminCredentials.passwordHash || 'Admin';
-    const isPassMatch = 
-      cleanPass === storedPass || 
-      (storedPass === 'Admin' && cleanPass.toLowerCase() === 'admin') ||
-      cleanPass === 'admin.admin';
-
-    if (isUserMatch && isPassMatch) {
+    try {
+      const res = await loginAdminApi({ username: cleanId, password: cleanPass });
       setIsAdminAuthenticated(true);
+      setAdminProfile(res.admin);
+      setAdminCredentials({
+        username: res.admin.username,
+        passwordHash: '••••••••',
+        updatedAt: res.admin.updated_at
+      });
       localStorage.setItem('toto_admin_authenticated', 'true');
       playChime('success');
       return { success: true, message: 'Admin authenticated successfully!' };
+    } catch (err: any) {
+      playChime('alert');
+      return { success: false, message: err.message || 'Invalid username or password.' };
     }
-
-    playChime('alert');
-    return { success: false, message: 'Invalid Admin credentials. Default username is "Admin" and password is "Admin".' };
   };
 
-  const logoutAdmin = () => {
+  const logoutAdmin = async (): Promise<void> => {
+    try {
+      await logoutAdminApi();
+    } catch {
+      // ignore
+    }
     setIsAdminAuthenticated(false);
+    setAdminProfile(null);
     localStorage.removeItem('toto_admin_authenticated');
     setActiveRole('user');
     playChime('beep');
   };
 
-  const updateAdminCredentials = (
+  const logoutAllAdminSessions = async (): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await logoutAllAdminSessionsApi();
+      setIsAdminAuthenticated(false);
+      setAdminProfile(null);
+      localStorage.removeItem('toto_admin_authenticated');
+      setActiveRole('user');
+      playChime('beep');
+      return { success: true, message: res.message };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Failed to terminate all sessions.' };
+    }
+  };
+
+  const updateAdminCredentials = async (
     newUsername: string, 
     newPassword: string, 
     currentPassword?: string
-  ): { success: boolean; message: string } => {
+  ): Promise<{ success: boolean; message: string }> => {
     const trimmedUser = newUsername.trim();
     const trimmedPass = newPassword.trim();
 
-    if (!trimmedUser || trimmedUser.length < 3) {
-      return { success: false, message: 'Username must be at least 3 characters long.' };
-    }
-    if (!trimmedPass || trimmedPass.length < 3) {
-      return { success: false, message: 'Password must be at least 3 characters long.' };
+    if (!currentPassword) {
+      return { success: false, message: 'Current password is required to verify your identity.' };
     }
 
-    // If currentPassword is provided, verify it against existing stored password
-    if (currentPassword !== undefined && !isAdminAuthenticated) {
-      const cleanCurrent = currentPassword.trim();
-      const currentStored = adminCredentials.passwordHash || 'Admin';
-      const isMatch = 
-        cleanCurrent === currentStored || 
-        (currentStored === 'Admin' && cleanCurrent.toLowerCase() === 'admin') ||
-        cleanCurrent === 'admin.admin';
-      
-      if (!isMatch) {
-        playChime('alert');
-        return { success: false, message: 'Verification failed: Current password is incorrect.' };
+    try {
+      // 1. Update username if changed
+      if (trimmedUser && trimmedUser !== (adminProfile?.username || adminCredentials.username)) {
+        const uRes = await changeAdminUsernameApi({
+          currentPassword,
+          newUsername: trimmedUser
+        });
+        if (uRes.admin) {
+          setAdminProfile(uRes.admin);
+          setAdminCredentials(prev => ({ ...prev, username: uRes.admin!.username, updatedAt: uRes.admin!.updated_at }));
+        }
       }
+
+      // 2. Update password if provided
+      if (trimmedPass) {
+        await changeAdminPasswordApi({
+          currentPassword,
+          newPassword: trimmedPass,
+          confirmPassword: trimmedPass
+        });
+      }
+
+      playChime('success');
+      return {
+        success: true,
+        message: 'Admin credentials updated successfully on single account ADMIN_001.'
+      };
+    } catch (err: any) {
+      playChime('alert');
+      return { success: false, message: err.message || 'Failed to update admin credentials.' };
     }
-
-    const updated = {
-      username: trimmedUser,
-      passwordHash: trimmedPass,
-      updatedAt: new Date().toISOString()
-    };
-
-    setAdminCredentials(updated);
-    localStorage.setItem('toto_admin_credentials', JSON.stringify(updated));
-    playChime('success');
-    return { 
-      success: true, 
-      message: `Admin credentials updated successfully! New Username: "${trimmedUser}"` 
-    };
   };
 
-  const updateAdminPassword = (newPassword: string): { success: boolean; message: string } => {
-    return updateAdminCredentials(adminCredentials.username || 'Admin', newPassword);
+  const updateAdminPassword = async (newPassword: string, currentPassword?: string): Promise<{ success: boolean; message: string }> => {
+    return updateAdminCredentials(adminProfile?.username || adminCredentials.username, newPassword, currentPassword);
   };
 
   // Customer features state (wallet, saved places, safety, support, scheduling)
@@ -462,258 +568,58 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     playChime(type);
   }, []);
 
-  // 1. Initial Drivers, Approvals, Users & Rides bootstrap: Seed if database is empty
+  // Primary live production driver specification: (keep only one driver)
+  const DEFAULT_PRIMARY_DRIVER: DriverProfile = {
+    id: 'drv_1',
+    name: 'Bikram Naskar',
+    phone: '+91 98314 55029',
+    vehicleType: 'toto',
+    vehicleNumber: 'WB-24-ER-8841',
+    vehicleModel: 'Mayuri Grand Li-ion E-Rickshaw',
+    vehicleColor: 'Emerald Green',
+    pin: '1234',
+    approvalStatus: 'approved',
+    rating: 4.9,
+    totalTrips: 0,
+    batteryPercentage: 92,
+    todayEarnings: 0,
+    totalEarnings: 0,
+    acceptanceRate: 100,
+    isOnline: false,
+    availabilityStatus: 'inactive',
+    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+    kycVerified: true,
+    currentLat: 22.5804,
+    currentLng: 88.4378,
+    updatedAt: new Date().toISOString()
+  };
+
+  // 1. Real-time pub/sub listeners for Users, Rides, and Drivers
   useEffect(() => {
+    // Maintain single live production driver as requested: (keep only one driver)
     const existingDrivers = appDb.getAll<DriverProfile>('drivers');
     if (existingDrivers.length === 0) {
-      for (const d of SEED_DRIVERS) {
-        appDb.set('drivers', d.id, d);
-      }
+      appDb.set('drivers', DEFAULT_PRIMARY_DRIVER.id, DEFAULT_PRIMARY_DRIVER);
+      appDb.set('driver_approvals', DEFAULT_PRIMARY_DRIVER.id, {
+        id: DEFAULT_PRIMARY_DRIVER.id,
+        driverName: DEFAULT_PRIMARY_DRIVER.name,
+        phone: DEFAULT_PRIMARY_DRIVER.phone,
+        vehicleNumber: DEFAULT_PRIMARY_DRIVER.vehicleNumber,
+        vehicleModel: DEFAULT_PRIMARY_DRIVER.vehicleModel,
+        vehicleColor: DEFAULT_PRIMARY_DRIVER.vehicleColor,
+        vehicleType: DEFAULT_PRIMARY_DRIVER.vehicleType,
+        status: 'approved',
+        generatedPin: DEFAULT_PRIMARY_DRIVER.pin,
+        createdAt: new Date().toISOString()
+      });
+    } else if (existingDrivers.length > 1) {
+      const [firstDriver, ...excessDrivers] = existingDrivers;
+      excessDrivers.forEach((d) => {
+        appDb.delete('drivers', d.id);
+        appDb.delete('driver_approvals', d.id);
+      });
     }
 
-    const existingAppr = appDb.getAll<DriverApprovalRequest>('driver_approvals');
-    if (existingAppr.length === 0) {
-      const sampleAppr: DriverApprovalRequest = {
-        id: 'appr_sample_bikram',
-        driverName: 'Bikram Naskar',
-        phone: '+91 98314 55029',
-        vehicleType: 'toto',
-        vehicleNumber: 'WB-24-ER-8841',
-        vehicleModel: 'Mayuri Grand Li-ion E-Rickshaw',
-        vehicleColor: 'Emerald Green',
-        driverPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-        totoPhotos: [
-          'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=600&auto=format&fit=crop&q=80',
-          'https://images.unsplash.com/photo-1558980664-769d59546b3d?w=600&auto=format&fit=crop&q=80',
-          'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&auto=format&fit=crop&q=80'
-        ],
-        status: 'pending',
-        createdAt: new Date(Date.now() - 3600000).toISOString()
-      };
-      appDb.set('driver_approvals', sampleAppr.id, sampleAppr);
-    }
-
-    // Seed Users if table is empty
-    const existingUsers = appDb.getAll<UserProfile>('users');
-    if (existingUsers.length === 0) {
-      const SEED_USERS: UserProfile[] = [
-        {
-          id: 'usr_subrata',
-          name: 'Subrata Naskar',
-          phone: '+91 98301 45289',
-          email: 'subrata@totodrive.in',
-          avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
-          rating: 4.95,
-          totalRides: 42,
-          walletBalance: 450,
-          status: 'active',
-          createdAt: '2025-01-12T10:00:00.000Z',
-          notes: 'Frequent commuter from Sector V to Salt Lake.'
-        },
-        {
-          id: 'usr_koushik',
-          name: 'Koushik Haldar',
-          phone: '+91 98311 02458',
-          email: 'koushik@totodrive.in',
-          avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=120&auto=format&fit=crop&q=80',
-          rating: 4.9,
-          totalRides: 38,
-          walletBalance: 320,
-          status: 'active',
-          createdAt: '2025-01-20T11:30:00.000Z',
-          notes: 'Daily office rider at DLF 2 IT Park.'
-        },
-        {
-          id: 'usr_ananya',
-          name: 'Ananya Sen',
-          phone: '+91 98302 99412',
-          email: 'ananya.sen@gmail.com',
-          avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80',
-          rating: 4.8,
-          totalRides: 19,
-          walletBalance: 120,
-          status: 'active',
-          createdAt: '2025-02-02T09:15:00.000Z',
-          notes: 'City Centre 1 frequent shopper.'
-        },
-        {
-          id: 'usr_rohit',
-          name: 'Rohit Bhattacharya',
-          phone: '+91 98744 11204',
-          email: 'rohit.b@yahoo.co.in',
-          avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80',
-          rating: 3.8,
-          totalRides: 5,
-          walletBalance: 0,
-          status: 'blocked',
-          createdAt: '2025-02-15T14:20:00.000Z',
-          notes: 'Account suspended due to policy violation dispute.'
-        }
-      ];
-      for (const u of SEED_USERS) {
-        appDb.set('users', u.id, u);
-      }
-    }
-
-    // Seed Rides if table is empty
-    const existingRides = appDb.getAll<ActiveRide>('rides');
-    if (existingRides.length === 0) {
-      const SEED_RIDES: ActiveRide[] = [
-        {
-          id: 'RIDE-9021',
-          userId: 'usr_subrata',
-          userName: 'Subrata Naskar',
-          userPhone: '+91 98301 45289',
-          userRating: 4.95,
-          driverId: 'drv_1',
-          driverName: 'Bikram Naskar',
-          driverPhone: '+91 98314 55029',
-          vehicleNumber: 'WB-24-ER-8841',
-          vehicleModel: 'Mayuri Grand Li-ion E-Rickshaw',
-          vehicleType: 'toto',
-          pickup: {
-            lat: 22.5735,
-            lng: 88.4331,
-            name: 'Sector V Metro Station (Gate 2)',
-            address: 'Sector V Metro Station (Gate 2), Salt Lake'
-          },
-          dropoff: {
-            lat: 22.5898,
-            lng: 88.4082,
-            name: 'City Centre 1 Mall',
-            address: 'City Centre 1 Mall, DC Block, Salt Lake'
-          },
-          distanceKm: 1.8,
-          estimatedMins: 6,
-          basePrice: 35,
-          discount: 5,
-          totalFare: 35,
-          driverEarnings: 31,
-          paymentMethod: 'upi',
-          paymentStatus: 'paid',
-          status: 'completed',
-          otp: '4912',
-          bookedAt: 'Today, 10:14 AM',
-          completedAt: 'Today, 10:20 AM'
-        },
-        {
-          id: 'RIDE-9022',
-          userId: 'usr_ananya',
-          userName: 'Ananya Sen',
-          userPhone: '+91 98302 99412',
-          userRating: 4.8,
-          driverId: 'drv_2',
-          driverName: 'Bappa Paul',
-          driverPhone: '+91 98302 11984',
-          vehicleNumber: 'WB-08-ER-3921',
-          vehicleModel: 'Saarthi Star High-Range Toto',
-          vehicleType: 'toto',
-          pickup: {
-            lat: 22.5898,
-            lng: 88.4082,
-            name: 'City Centre 1 Mall',
-            address: 'City Centre 1 Mall, DC Block, Salt Lake'
-          },
-          dropoff: {
-            lat: 22.5861,
-            lng: 88.4199,
-            name: 'Karunamoyee Bus Terminal',
-            address: 'Karunamoyee Central Bus Terminal, Salt Lake'
-          },
-          distanceKm: 2.2,
-          estimatedMins: 8,
-          basePrice: 45,
-          discount: 0,
-          totalFare: 45,
-          driverEarnings: 40,
-          paymentMethod: 'wallet',
-          paymentStatus: 'paid',
-          status: 'in_progress',
-          otp: '7721',
-          bookedAt: 'Today, 10:30 AM'
-        },
-        {
-          id: 'RIDE-9020',
-          userId: 'usr_koushik',
-          userName: 'Koushik Haldar',
-          userPhone: '+91 98311 02458',
-          userRating: 4.9,
-          driverId: 'drv_3',
-          driverName: 'Joydeb Das',
-          driverPhone: '+91 98366 45091',
-          vehicleNumber: 'WB-02-ER-7712',
-          vehicleModel: 'Thukral Electric EcoToto',
-          vehicleType: 'toto',
-          pickup: {
-            lat: 22.5815,
-            lng: 88.4729,
-            name: 'Eco Space Business Park',
-            address: 'Eco Space Business Park, New Town'
-          },
-          dropoff: {
-            lat: 22.6288,
-            lng: 88.4552,
-            name: 'City Centre 2 (Rajarhat)',
-            address: 'City Centre 2, Major Arterial Road, Rajarhat'
-          },
-          distanceKm: 4.1,
-          estimatedMins: 14,
-          basePrice: 65,
-          discount: 10,
-          totalFare: 65,
-          driverEarnings: 58,
-          paymentMethod: 'cash',
-          paymentStatus: 'paid',
-          status: 'completed',
-          otp: '8834',
-          bookedAt: 'Yesterday, 06:45 PM',
-          completedAt: 'Yesterday, 07:00 PM'
-        },
-        {
-          id: 'RIDE-9019',
-          userId: 'usr_rohit',
-          userName: 'Rohit Bhattacharya',
-          userPhone: '+91 98744 11204',
-          userRating: 3.8,
-          driverId: 'drv_1',
-          driverName: 'Bikram Naskar',
-          driverPhone: '+91 98314 55029',
-          vehicleNumber: 'WB-24-ER-8841',
-          vehicleModel: 'Mayuri Grand Li-ion E-Rickshaw',
-          vehicleType: 'toto',
-          pickup: {
-            lat: 22.5936,
-            lng: 88.4725,
-            name: 'DLF 2 IT Park',
-            address: 'DLF 2 IT Park, Action Area II, New Town'
-          },
-          dropoff: {
-            lat: 22.5861,
-            lng: 88.4199,
-            name: 'Karunamoyee Terminal',
-            address: 'Karunamoyee Central Bus Terminal'
-          },
-          distanceKm: 2.9,
-          estimatedMins: 10,
-          basePrice: 50,
-          discount: 0,
-          totalFare: 0,
-          driverEarnings: 0,
-          paymentMethod: 'cash',
-          paymentStatus: 'pending',
-          status: 'cancelled',
-          otp: '1249',
-          bookedAt: 'Yesterday, 02:10 PM'
-        }
-      ];
-      for (const r of SEED_RIDES) {
-        appDb.set('rides', r.id, r);
-      }
-    }
-  }, []);
-
-  // 1b. Real-time pub/sub listeners for Users, Rides, and Drivers
-  useEffect(() => {
     const unsubUsers = appDb.subscribe<UserProfile>('users', (list) => {
       setAllUsers(list);
     });
@@ -722,7 +628,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     const unsubDrivers = appDb.subscribe<DriverProfile>('drivers', (list) => {
       setAllDrivers(list);
-      setOnlineDrivers(list.length > 0 ? list : SEED_DRIVERS);
+      setOnlineDrivers(list.filter((d) => d.isOnline && d.availabilityStatus !== 'offline' && d.availabilityStatus !== 'inactive'));
     });
 
     return () => {
@@ -732,7 +638,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // 1b. Real-time listener for driver registration approvals
+  // 2. Real-time listener for driver registration approvals
   useEffect(() => {
     const unsubscribe = appDb.subscribe<DriverApprovalRequest>('driver_approvals', (list) => {
       let pending = 0;
@@ -744,15 +650,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const sorted = [...list].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       setDriverApprovals(sorted);
       setPendingApprovalsCount(pending);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // 2. Real-time listener on all registered online Toto Drivers
-  useEffect(() => {
-    const unsubscribe = appDb.subscribe<DriverProfile>('drivers', (list) => {
-      setOnlineDrivers(list.length > 0 ? list : SEED_DRIVERS);
     });
 
     return () => unsubscribe();
@@ -886,51 +783,12 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, [driver, triggerSound]);
 
-  // 6. Realistic Driver Movement & Telemetry Simulation for Passenger Live Tracking in User Mode
+  // 6. Smooth Live GPS Movement: towards Pickup (driver_assigned) or towards Dropoff (in_progress)
   useEffect(() => {
     if (activeRole !== 'user' || !activeRide || activeRide.status === 'completed' || activeRide.status === 'cancelled') {
       return;
     }
 
-    // A. Auto-assign driver if in searching status for more than 3.5s
-    if (activeRide.status === 'searching') {
-      const timer = setTimeout(async () => {
-        const candidateDriver = (onlineDrivers.length > 0 ? onlineDrivers[0] : SEED_DRIVERS[0]);
-        const startLat = (activeRide.driverLocation?.lat || activeRide.pickup.lat) + 0.0028;
-        const startLng = (activeRide.driverLocation?.lng || activeRide.pickup.lng) + 0.0024;
-        const heading = calculateBearing(startLat, startLng, activeRide.pickup.lat, activeRide.pickup.lng);
-
-        const assignedUpdates: Partial<ActiveRide> = {
-          driverId: activeRide.driverId || candidateDriver.id,
-          driverName: activeRide.driverName || candidateDriver.name,
-          driverPhone: activeRide.driverPhone || candidateDriver.phone,
-          driverPhoto: activeRide.driverPhoto || candidateDriver.avatarUrl,
-          vehicleNumber: activeRide.vehicleNumber || candidateDriver.vehicleNumber,
-          vehicleModel: activeRide.vehicleModel || candidateDriver.vehicleModel,
-          status: 'driver_assigned',
-          acceptedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          driverLocation: {
-            lat: Number(startLat.toFixed(6)),
-            lng: Number(startLng.toFixed(6)),
-            heading: Math.round(heading),
-            timestamp: Date.now()
-          }
-        };
-
-        setActiveRide((prev) => prev ? { ...prev, ...assignedUpdates } : null);
-        triggerSound('success');
-
-        try {
-          appDb.update('rides', activeRide.id, assignedUpdates);
-        } catch {
-          // Non-blocking
-        }
-      }, 3500);
-
-      return () => clearTimeout(timer);
-    }
-
-    // B. Smooth Live GPS Movement: towards Pickup (driver_assigned) or towards Dropoff (in_progress)
     if (activeRide.status === 'driver_assigned' || activeRide.status === 'in_progress') {
       const interval = setInterval(() => {
         setActiveRide((prev) => {
@@ -1096,22 +954,95 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Driver Login / Registration with instant state update + background sync
   const loginDriver = async (d: DriverProfile) => {
-    setDriver(d);
+    const onlineDriver: DriverProfile = {
+      ...d,
+      isOnline: true,
+      availabilityStatus: 'online',
+      updatedAt: new Date().toISOString()
+    };
+    setDriver(onlineDriver);
     try {
-      localStorage.setItem('toto_saved_driver', JSON.stringify(d));
+      localStorage.setItem('toto_saved_driver', JSON.stringify(onlineDriver));
+      localStorage.setItem('toto_active_role', 'driver');
     } catch {}
+    setActiveRoleState('driver');
     triggerSound('success');
-    appDb.set('drivers', d.id, d);
+    appDb.set('drivers', onlineDriver.id, onlineDriver);
+    setOnlineDrivers((prev) => {
+      const exists = prev.some((item) => item.id === onlineDriver.id);
+      return exists ? prev.map((item) => item.id === onlineDriver.id ? onlineDriver : item) : [...prev, onlineDriver];
+    });
   };
 
-  const logoutDriver = () => {
+  const logoutDriver = useCallback(async () => {
+    // 1. Resolve current driver ID and record
+    let currentDriverId = driver?.id;
+    let currentDriverData = driver;
+
+    if (!currentDriverId && typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('toto_saved_driver');
+        if (saved) {
+          currentDriverData = JSON.parse(saved);
+          currentDriverId = currentDriverData?.id;
+        }
+      } catch {}
+    }
+
+    if (!currentDriverId) {
+      const allRegistered = appDb.getAll<DriverProfile>('drivers');
+      if (allRegistered.length > 0) {
+        currentDriverId = allRegistered[0].id;
+        currentDriverData = allRegistered[0];
+      }
+    }
+
+    if (currentDriverId) {
+      const offlineDriver: DriverProfile = {
+        ...(currentDriverData || {}),
+        id: currentDriverId,
+        isOnline: false,
+        availabilityStatus: 'inactive',
+        lastLocationUpdate: Date.now(),
+        updatedAt: new Date().toISOString()
+      } as DriverProfile;
+
+      // 2. Immediately update in database (appDb)
+      try {
+        appDb.set('drivers', currentDriverId, offlineDriver);
+      } catch (err) {
+        console.error('Error updating driver to inactive in appDb on logout:', err);
+      }
+
+      // 3. Sync to Supabase if configured
+      if (isSupabaseConfigured) {
+        try {
+          upsertSupabaseDriver(offlineDriver).catch(() => {});
+        } catch {}
+      }
+
+      // 4. Trigger reactive UI state update immediately
+      setOnlineDrivers((prev) => prev.filter((d) => d.id !== currentDriverId));
+      setAllDrivers((prev) =>
+        prev.map((d) => (d.id === currentDriverId ? offlineDriver : d))
+      );
+    } else {
+      setOnlineDrivers([]);
+    }
+
+    // 5. Clear driver session state & pending requests
     setDriver(null);
     setPendingDriverRequest(null);
     try {
       localStorage.removeItem('toto_saved_driver');
+      localStorage.removeItem('rapid_toto_driver');
+      if (localStorage.getItem('toto_active_role') === 'driver') {
+        localStorage.setItem('toto_active_role', 'user');
+      }
     } catch {}
+    setActiveRoleState('user');
     triggerSound('beep');
-  };
+  }, [driver, isSupabaseConfigured, triggerSound]);
 
   // Register a new driver approval request in Firestore
   const registerDriverApproval = async (data: {
@@ -1354,9 +1285,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const matchedDriver = allDrivers.find((d) => {
         const dPhoneDigits = (d.phone || '').replace(/\D/g, '');
         return dPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(dPhoneDigits);
-      }) || (onlineDrivers.length > 0 ? onlineDrivers : SEED_DRIVERS).find((d) => {
-        const dPhoneDigits = (d.phone || '').replace(/\D/g, '');
-        return dPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(dPhoneDigits);
       });
 
       if (matchedDriver) {
@@ -1373,8 +1301,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
             message: 'Your Toto registration was rejected by Admin.'
           };
         }
-        const expectedPin = driverDoc.pin || '1234';
-        if (expectedPin === cleanPin || cleanPin === '1234') {
+        const expectedPin = driverDoc.pin;
+        if (expectedPin && expectedPin === cleanPin) {
           await loginDriver(driverDoc);
           return { success: true };
         } else {
@@ -1401,8 +1329,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
         }
         if (appr.status === 'approved') {
-          const expectedPin = appr.generatedPin || '1234';
-          if (expectedPin === cleanPin || cleanPin === '1234') {
+          const expectedPin = appr.generatedPin;
+          if (expectedPin && expectedPin === cleanPin) {
             const newDriver: DriverProfile = {
               id: `drv_${cleanDigits.slice(-6)}`,
               name: appr.driverName,
@@ -1432,12 +1360,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return { success: false, message: 'Incorrect 4-digit security PIN.' };
           }
         }
-      }
-
-      // Demo fallback: default captain phone
-      if (cleanDigits.endsWith('9874522019') && (cleanPin === '1234' || cleanPin === '0000')) {
-        await loginDriver(SEED_DRIVERS[0]);
-        return { success: true };
       }
 
       return {
@@ -1504,11 +1426,28 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updated: DriverProfile = { 
       ...driver, 
       isOnline, 
+      availabilityStatus: isOnline ? 'online' : 'inactive',
+      lastLocationUpdate: Date.now(),
       updatedAt: new Date().toISOString() 
     };
     setDriver(updated);
     try {
+      localStorage.setItem('toto_saved_driver', JSON.stringify(updated));
+    } catch {}
+    try {
       appDb.set('drivers', driver.id, updated);
+      if (isOnline) {
+        setOnlineDrivers((prev) => {
+          const exists = prev.some((item) => item.id === updated.id);
+          return exists ? prev.map((item) => item.id === updated.id ? updated : item) : [...prev, updated];
+        });
+      } else {
+        setOnlineDrivers((prev) => prev.filter((item) => item.id !== updated.id));
+      }
+      setAllDrivers((prev) => prev.map((item) => item.id === updated.id ? updated : item));
+      if (isSupabaseConfigured) {
+        upsertSupabaseDriver(updated).catch(() => {});
+      }
       triggerSound('beep');
     } catch (error) {
       console.error('Update driver online status error:', error);
@@ -1600,8 +1539,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const distanceKm = calculateDistanceKm(pickup, dropoff);
 
     setTimeout(() => {
-      // Gather active online drivers from state or seed fallback
-      const driversToUse = onlineDrivers.length > 0 ? onlineDrivers : SEED_DRIVERS;
+      // Gather active online drivers from registered fleet
+      const driversToUse = onlineDrivers.filter((d) => d.isOnline && d.availabilityStatus !== 'busy' && d.availabilityStatus !== 'offline' && d.availabilityStatus !== 'inactive');
       const offers: TotoPartnerOffer[] = driversToUse.slice(0, 4).map((d, index) => {
         const offsetLat = (index % 2 === 0 ? 0.001 : -0.001) * (index + 1);
         const offsetLng = (index > 1 ? 0.0015 : -0.0015) * (index + 1);
@@ -1633,7 +1572,9 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setAvailableTotoOffers(offers);
       setIsScanningOffers(false);
-      triggerSound('success');
+      if (offers.length > 0) {
+        triggerSound('success');
+      }
     }, 700);
   }, [onlineDrivers, triggerSound]);
 
@@ -1796,11 +1737,12 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Driver Accepts Ride
   const driverAcceptRide = async (rideId: string) => {
+    if (!driver) return;
     if (!activeRide && !pendingDriverRequest) return;
     const current = pendingDriverRequest || activeRide;
     if (!current || current.id !== rideId) return;
 
-    const assignedDriver = driver || SEED_DRIVERS[0];
+    const assignedDriver = driver;
     const acceptedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const driverLocation = {
       lat: (assignedDriver.currentLat || current.pickup.lat) + 0.0012,
@@ -1963,50 +1905,10 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Advance Ride Stage manually for demo / instant testing
+  // Advance Ride Stage (demo helper deprecated in production)
   const advanceRideStage = async () => {
     if (!activeRide) return;
-    if (activeRide.status === 'searching') {
-      const candidateDriver = (onlineDrivers.length > 0 ? onlineDrivers[0] : SEED_DRIVERS[0]);
-      const updates: Partial<ActiveRide> = {
-        driverId: activeRide.driverId || candidateDriver.id,
-        driverName: activeRide.driverName || candidateDriver.name,
-        driverPhone: activeRide.driverPhone || candidateDriver.phone,
-        driverPhoto: activeRide.driverPhoto || candidateDriver.avatarUrl,
-        vehicleNumber: activeRide.vehicleNumber || candidateDriver.vehicleNumber,
-        vehicleModel: activeRide.vehicleModel || candidateDriver.vehicleModel,
-        status: 'driver_assigned',
-        acceptedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setActiveRide((prev) => prev ? { ...prev, ...updates } : null);
-      triggerSound('success');
-      try {
-        appDb.update('rides', activeRide.id, updates);
-      } catch {}
-    } else if (activeRide.status === 'driver_assigned' || activeRide.status === 'driver_arriving') {
-      const updates = {
-        status: 'driver_arrived' as const,
-        driverLocation: {
-          lat: activeRide.pickup.lat,
-          lng: activeRide.pickup.lng,
-        }
-      };
-      setActiveRide((prev) => prev ? { ...prev, ...updates } : null);
-      triggerSound('beep');
-      try {
-        appDb.update('rides', activeRide.id, updates);
-      } catch {}
-    } else if (activeRide.status === 'driver_arrived') {
-      const updates = {
-        status: 'in_progress' as const,
-        startedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setActiveRide((prev) => prev ? { ...prev, ...updates } : null);
-      triggerSound('success');
-      try {
-        appDb.update('rides', activeRide.id, updates);
-      } catch {}
-    } else if (activeRide.status === 'in_progress') {
+    if (activeRide.status === 'in_progress') {
       await driverCompleteRide();
     }
   };
@@ -2345,8 +2247,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Convert real online drivers into markers for Leaflet map display (filtering out stale updates)
-  const simulatedDrivers: SimulatedDriverMarker[] = (onlineDrivers.length > 0 ? onlineDrivers : SEED_DRIVERS)
-    .filter((d) => d.isOnline && isDriverLocationFresh(d.lastLocationUpdate || d.updatedAt))
+  const simulatedDrivers: SimulatedDriverMarker[] = onlineDrivers
+    .filter((d) => d.isOnline && d.availabilityStatus !== 'offline' && d.availabilityStatus !== 'inactive' && isDriverLocationFresh(d.lastLocationUpdate || d.updatedAt))
     .map((d, index) => ({
       id: d.id,
       name: `${d.name.split(' ')[0]} (Toto)`,
@@ -2355,7 +2257,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lat: d.currentLat || 22.5804 + (index % 2 === 0 ? 0.002 : -0.002),
       lng: d.currentLng || 88.4378 + (index > 1 ? 0.002 : -0.002),
       heading: d.heading ?? (45 * index),
-      isAvailable: d.availabilityStatus !== 'busy',
+      isAvailable: d.isOnline && d.availabilityStatus !== 'busy' && d.availabilityStatus !== 'offline' && d.availabilityStatus !== 'inactive',
       rating: d.rating,
       batteryPercentage: d.batteryPercentage,
       lastUpdated: d.lastLocationUpdate || d.updatedAt
@@ -2423,9 +2325,14 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         completedTrips,
         rateRideWithTags,
         isAdminAuthenticated,
+        adminProfile,
+        adminExistsState,
         adminCredentials,
+        refreshAdminStatus,
+        setupInitialAdminAccount,
         loginAdmin,
         logoutAdmin,
+        logoutAllAdminSessions,
         updateAdminCredentials,
         updateAdminPassword,
         allUsers,

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { useRide } from '../../context/RideContext';
+import { useBackHandler } from '../../hooks/useBackHandler';
 import { motion } from 'motion/react';
 
 interface ProfileSettingsPageProps {
@@ -57,6 +58,10 @@ export const ProfileSettingsPage: React.FC<ProfileSettingsPageProps> = ({
   const { setActiveRole, triggerSound, updateUserProfile } = useRide();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+
+  // System back button dismisses open dialogs in Profile page
+  useBackHandler('modal:editProfile', showEditModal, () => setShowEditModal(false), 25);
+  useBackHandler('modal:logoutConfirm', showLogoutConfirm, () => setShowLogoutConfirm(false), 25);
   const [editName, setEditName] = useState(user?.name || '');
   const [editPhone, setEditPhone] = useState(user?.phone || '');
   const [editEmail, setEditEmail] = useState(user?.email || '');

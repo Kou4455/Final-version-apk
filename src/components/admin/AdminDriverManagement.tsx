@@ -131,7 +131,7 @@ export const AdminDriverManagement: React.FC = () => {
     triggerSound('beep');
     await adminUpdateDriver(d.id, { 
       isOnline: !d.isOnline, 
-      availabilityStatus: !d.isOnline ? 'online' : 'offline' 
+      availabilityStatus: !d.isOnline ? 'online' : 'inactive' 
     });
     setActionNotice(`Captain "${d.name}" set to ${!d.isOnline ? 'ONLINE' : 'OFFLINE'}. Synced to database.`);
   };

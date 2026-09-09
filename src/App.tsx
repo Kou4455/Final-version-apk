@@ -3,6 +3,8 @@ import { RideProvider, useRide } from './context/RideContext';
 import { Header } from './components/common/Header';
 import { BottomNavigation } from './components/common/BottomNavigation';
 import { SplashScreen } from './components/common/SplashScreen';
+import { BackExitToast } from './components/common/BackExitToast';
+import { useBackHandler } from './hooks/useBackHandler';
 import { UserLogin } from './components/user/UserLogin';
 import { UserDashboard } from './components/user/UserDashboard';
 import { DriverLogin } from './components/driver/DriverLogin';
@@ -25,12 +27,8 @@ const MainAppContent: React.FC = () => {
   } = useRide();
   const [showSplash, setShowSplash] = useState(true);
 
-  // Automatically logout driver or captains whenever returning to the user login page
-  useEffect(() => {
-    if (activeRole === 'user' && !user && driver) {
-      logoutDriver();
-    }
-  }, [activeRole, user, driver, logoutDriver]);
+  // System back handler for admin role to return to user dashboard
+  useBackHandler('role:admin', activeRole === 'admin', () => setActiveRole('user'), 15);
 
   if (showSplash) {
     return (
@@ -150,6 +148,7 @@ const MainAppContent: React.FC = () => {
         </footer>
       )}
       <BottomNavigation />
+      <BackExitToast />
     </div>
   );
 };

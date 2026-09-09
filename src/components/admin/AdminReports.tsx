@@ -15,31 +15,66 @@ import {
 } from 'lucide-react';
 
 export const AdminReports: React.FC = () => {
-  const { triggerSound } = useRide();
+  const { allRides, allDrivers, triggerSound } = useRide();
   const [dateRange, setDateRange] = useState<'today' | '7days' | 'month' | 'year'>('today');
 
-  // Realistic analytics figures for Toto Network
-  const metrics = {
-    totalRevenue: dateRange === 'today' ? 14850 : dateRange === '7days' ? 98400 : 392000,
-    platformFee: dateRange === 'today' ? 1485 : dateRange === '7days' ? 9840 : 39200,
-    driverPayout: dateRange === 'today' ? 13365 : dateRange === '7days' ? 88560 : 352800,
-    totalBookings: dateRange === 'today' ? 342 : dateRange === '7days' ? 2280 : 9120,
-    completedTrips: dateRange === 'today' ? 324 : dateRange === '7days' ? 2150 : 8610,
-    cancelledTrips: dateRange === 'today' ? 18 : dateRange === '7days' ? 130 : 510,
-    activeCaptains: 48,
-    fuelSavedLitres: dateRange === 'today' ? 215 : dateRange === '7days' ? 1430 : 5720
-  };
+  // Filter rides based on selected timeframe
+  const now = new Date();
+  const filteredRides = allRides.filter((ride) => {
+    if (!ride.createdAt && !ride.acceptedAt) return true;
+    const rideDate = new Date(ride.createdAt || ride.acceptedAt || Date.now());
+    if (isNaN(rideDate.getTime())) return true;
+
+    if (dateRange === 'today') {
+      return rideDate.toDateString() === now.toDateString();
+    }
+    if (dateRange === '7days') {
+      const diffDays = (now.getTime() - rideDate.getTime()) / (1000 * 3600 * 24);
+      return diffDays <= 7;
+    }
+    if (dateRange === 'month') {
+      const diffDays = (now.getTime() - rideDate.getTime()) / (1000 * 3600 * 24);
+      return diffDays <= 30;
+    }
+    return true; // year / all
+  });
+
+  const completedRides = filteredRides.filter((r) => r.status === 'completed');
+  const cancelledRides = filteredRides.filter((r) => r.status === 'cancelled');
+
+  const totalRevenue = completedRides.reduce((acc, r) => acc + (Number((r as any).totalFare ?? r.fare) || 0), 0);
+  const platformFee = Math.round(totalRevenue * 0.10); // 10% platform commission
+  const driverPayout = totalRevenue - platformFee;
+  const totalBookings = filteredRides.length;
+  const completedTrips = completedRides.length;
+  const cancelledTrips = cancelledRides.length;
+  const activeCaptains = allDrivers.filter((d) => d.isOnline).length;
+  const totalKmTraveled = completedRides.reduce((acc, r) => acc + (Number(r.distanceKm) || 0), 0);
+  const fuelSavedLitres = Math.round(totalKmTraveled * 0.08); // Clean electric substitution factor
+
+  const completionRate = totalBookings > 0 ? ((completedTrips / totalBookings) * 100).toFixed(1) : '0.0';
+  const cancellationRate = totalBookings > 0 ? ((cancelledTrips / totalBookings) * 100).toFixed(1) : '0.0';
+
+  // Fleet share calculation
+  const totoTrips = completedRides.filter((r) => !r.vehicleType || r.vehicleType === 'toto').length;
+  const totoPct = completedTrips > 0 ? Math.round((totoTrips / completedTrips) * 100) : 0;
 
   const handleExportCSV = () => {
     triggerSound('success');
     const headers = ['Date', 'Ride_ID', 'Passenger_Name', 'Captain_Name', 'Vehicle_Number', 'Distance_KM', 'Fare_INR', 'Platform_Fee_INR', 'Payment_Method', 'Status'];
-    const rows = [
-      ['2025-05-01 10:14', 'RIDE-9021', 'Subrata Naskar', 'Bikram Naskar', 'WB-24-ER-8841', '1.8', '35', '3.5', 'UPI', 'COMPLETED'],
-      ['2025-05-01 10:30', 'RIDE-9022', 'Ananya Sen', 'Bappa Paul', 'WB-08-ER-3921', '2.2', '45', '4.5', 'WALLET', 'COMPLETED'],
-      ['2025-05-01 11:05', 'RIDE-9023', 'Koushik Haldar', 'Joydeb Das', 'WB-02-ER-7712', '4.1', '65', '6.5', 'CASH', 'COMPLETED'],
-      ['2025-05-01 11:42', 'RIDE-9024', 'Rohit Bhattacharya', 'Bikram Naskar', 'WB-24-ER-8841', '2.9', '0', '0', 'CASH', 'CANCELLED'],
-      ['2025-05-01 12:15', 'RIDE-9025', 'Priya Roy', 'Bappa Paul', 'WB-08-ER-3921', '3.0', '50', '5.0', 'UPI', 'COMPLETED']
-    ];
+    
+    const rows = filteredRides.map((r) => [
+      `"${r.createdAt || r.bookedAt || new Date().toISOString()}"`,
+      `"${r.id}"`,
+      `"${r.userName || 'Passenger'}"`,
+      `"${r.driverName || 'Captain'}"`,
+      `"${r.vehicleNumber || 'N/A'}"`,
+      `"${r.distanceKm || '0'}"`,
+      `"${(r as any).totalFare ?? r.fare ?? 0}"`,
+      `"${Math.round((Number((r as any).totalFare ?? r.fare) || 0) * 0.1)}"`,
+      `"${r.paymentMethod || 'cash'}"`,
+      `"${(r.status || 'unknown').toUpperCase()}"`
+    ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -89,11 +124,11 @@ export const AdminReports: React.FC = () => {
             Gross Bookings Value (GMV)
           </div>
           <div className="text-3xl font-extrabold text-[#111111] mt-2 font-mono">
-            ₹{metrics.totalRevenue.toLocaleString()}
+            ₹{totalRevenue.toLocaleString()}
           </div>
           <div className="text-[11px] text-emerald-600 font-bold mt-1 flex items-center gap-1">
             <ArrowUpRight className="w-3.5 h-3.5" />
-            <span>+14.2% vs previous period</span>
+            <span>Active Period Gross</span>
           </div>
         </div>
 
@@ -102,7 +137,7 @@ export const AdminReports: React.FC = () => {
             Platform Net Commission (10%)
           </div>
           <div className="text-3xl font-extrabold text-[#C8622A] mt-2 font-mono">
-            ₹{metrics.platformFee.toLocaleString()}
+            ₹{platformFee.toLocaleString()}
           </div>
           <p className="text-[11px] text-neutral-400 mt-1">Direct system platform fee</p>
         </div>
@@ -112,7 +147,7 @@ export const AdminReports: React.FC = () => {
             Captain Net Disbursal (90%)
           </div>
           <div className="text-3xl font-extrabold text-emerald-700 mt-2 font-mono">
-            ₹{metrics.driverPayout.toLocaleString()}
+            ₹{driverPayout.toLocaleString()}
           </div>
           <p className="text-[11px] text-neutral-400 mt-1">Paid directly to Toto drivers</p>
         </div>
@@ -121,65 +156,50 @@ export const AdminReports: React.FC = () => {
       {/* Operational Efficiency Tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white p-3 rounded-2xl border border-neutral-200 shadow-2xs">
-          <div className="text-[10px] text-neutral-400 uppercase font-bold">Total Rides</div>
-          <div className="font-extrabold text-xl text-neutral-900 mt-1">{metrics.totalBookings}</div>
+          <div className="text-[10px] text-neutral-400 uppercase font-bold">Total Bookings</div>
+          <div className="font-extrabold text-xl text-neutral-900 mt-1">{totalBookings}</div>
         </div>
 
         <div className="bg-white p-3 rounded-2xl border border-neutral-200 shadow-2xs">
           <div className="text-[10px] text-neutral-400 uppercase font-bold">Completed Rate</div>
           <div className="font-extrabold text-xl text-emerald-600 mt-1">
-            {((metrics.completedTrips / metrics.totalBookings) * 100).toFixed(1)}%
+            {completionRate}%
           </div>
         </div>
 
         <div className="bg-white p-3 rounded-2xl border border-neutral-200 shadow-2xs">
           <div className="text-[10px] text-neutral-400 uppercase font-bold">Cancellation Rate</div>
           <div className="font-extrabold text-xl text-rose-600 mt-1">
-            {((metrics.cancelledTrips / metrics.totalBookings) * 100).toFixed(1)}%
+            {cancellationRate}%
           </div>
         </div>
 
         <div className="bg-white p-3 rounded-2xl border border-neutral-200 shadow-2xs">
           <div className="text-[10px] text-neutral-400 uppercase font-bold">Clean Energy Saved</div>
-          <div className="font-extrabold text-xl text-emerald-600 mt-1">{metrics.fuelSavedLitres} L</div>
+          <div className="font-extrabold text-xl text-emerald-600 mt-1">{fuelSavedLitres} L</div>
         </div>
       </div>
 
       {/* Fleet Distribution Breakdown */}
       <div className="bg-white rounded-3xl p-5 border border-neutral-200 shadow-2xs space-y-3">
-        <h4 className="font-extrabold text-sm text-[#111111] flex items-center gap-2">
-          <Layers className="w-4 h-4 text-[#C8622A]" />
-          <span>Fleet Performance Distribution</span>
-        </h4>
+        <div className="flex items-center justify-between">
+          <h4 className="font-extrabold text-sm text-[#111111] flex items-center gap-2">
+            <Layers className="w-4 h-4 text-[#C8622A]" />
+            <span>Fleet Performance Distribution</span>
+          </h4>
+          <span className="text-xs text-neutral-500 font-medium">
+            Active Captains: <strong>{activeCaptains}</strong>
+          </span>
+        </div>
 
         <div className="space-y-2 text-xs">
           <div>
             <div className="flex justify-between font-semibold pb-1">
               <span>Toto Partner Electric (E-Rickshaw)</span>
-              <span>78% of all trips (252 rides)</span>
+              <span>{totoPct}% of trips ({totoTrips} completed)</span>
             </div>
             <div className="w-full h-2 rounded-full bg-neutral-100 overflow-hidden">
-              <div className="h-full bg-emerald-500 rounded-full" style={{ width: '78%' }} />
-            </div>
-          </div>
-
-          <div>
-            <div className="flex justify-between font-semibold pb-1">
-              <span>Toto Express Direct</span>
-              <span>15% of all trips (48 rides)</span>
-            </div>
-            <div className="w-full h-2 rounded-full bg-neutral-100 overflow-hidden">
-              <div className="h-full bg-[#C8622A] rounded-full" style={{ width: '15%' }} />
-            </div>
-          </div>
-
-          <div>
-            <div className="flex justify-between font-semibold pb-1">
-              <span>Bike & Auto Ancillary</span>
-              <span>7% of all trips (24 rides)</span>
-            </div>
-            <div className="w-full h-2 rounded-full bg-neutral-100 overflow-hidden">
-              <div className="h-full bg-blue-500 rounded-full" style={{ width: '7%' }} />
+              <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${totoPct}%` }} />
             </div>
           </div>
         </div>

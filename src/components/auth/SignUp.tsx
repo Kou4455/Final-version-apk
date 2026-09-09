@@ -86,9 +86,13 @@ export const SignUp: React.FC<SignUpProps> = ({ onNavigateToSignIn, onBack }) =>
         onNavigateToSignIn(cleanEmail, true);
       }
     } catch (err: any) {
-      console.error('Sign up error:', err);
+      console.warn('Sign-up validation notice:', err?.message || err);
       const message = err?.message || 'Failed to create account. Please try again.';
-      setErrorMsg(message);
+      if (message.toLowerCase().includes('already registered') || message.toLowerCase().includes('user already registered')) {
+        setErrorMsg('An account with this email address already exists. Please switch to Sign In or reset your password.');
+      } else {
+        setErrorMsg(message);
+      }
       triggerSound('alert');
     } finally {
       setLoading(false);

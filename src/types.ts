@@ -91,7 +91,7 @@ export interface DriverProfile {
   heading?: number;
   locationAccuracy?: number;
   lastLocationUpdate?: number | string;
-  availabilityStatus?: 'available' | 'busy' | 'offline' | 'online';
+  availabilityStatus?: 'available' | 'busy' | 'offline' | 'online' | 'inactive';
   currentRideId?: string | null;
   updatedAt?: string;
 }

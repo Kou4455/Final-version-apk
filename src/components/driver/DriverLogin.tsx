@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useRide } from '../../context/RideContext';
-import { SEED_DRIVERS } from '../../data/appData';
 import { 
   ArrowLeft, 
   Gauge, 
@@ -51,9 +50,9 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
     logoutDriver 
   } = useRide();
 
-  // Login form state
-  const [phoneNumber, setPhoneNumber] = useState('+91 98745 22019');
-  const [securityPin, setSecurityPin] = useState('1234');
+  // Login form state (starts blank with inside placeholder text)
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [securityPin, setSecurityPin] = useState('');
   const [loginSuccess, setLoginSuccess] = useState(false);
 
   // Mode: login vs register
@@ -180,7 +179,7 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
         }
       }
     } catch (err) {
-      console.error('Driver login error:', err);
+      console.warn('Driver login notice:', err);
       setErrorMsg('Login failed. Please check network connection and try again.');
     } finally {
       setLoading(false);
@@ -227,15 +226,6 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
     } finally {
       setLoading(false);
     }
-  };
-
-  // Quick autofill demo captain
-  const handleAutofillDemo = () => {
-    setPhoneNumber('+91 98745 22019');
-    setSecurityPin('1234');
-    setErrorMsg('');
-    setPendingApprovalNotice(null);
-    triggerSound('beep');
   };
 
   return (
@@ -344,18 +334,9 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
 
             {/* 4-digit Security PIN */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-bold text-[#111111]">
-                  4-Digit Security PIN
-                </label>
-                <button
-                  type="button"
-                  onClick={handleAutofillDemo}
-                  className="text-[10px] font-bold text-[#C8622A] hover:underline cursor-pointer"
-                >
-                  Demo Captain PIN (1234)
-                </button>
-              </div>
+              <label className="block text-xs font-bold text-[#111111]">
+                4-Digit Security PIN
+              </label>
 
               <div className="relative flex items-center bg-white rounded-2xl border border-[#EDE8E0] shadow-2xs focus-within:border-black transition-colors px-4 py-3">
                 <Lock className="w-4 h-4 text-gray-500 mr-2.5 shrink-0" />

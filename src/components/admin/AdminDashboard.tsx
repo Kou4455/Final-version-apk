@@ -8,6 +8,7 @@ import { AdminRidesManagement } from './AdminRidesManagement';
 import { AdminReports } from './AdminReports';
 import { AdminNotifications } from './AdminNotifications';
 import { AdminDatabaseStorage } from './AdminDatabaseStorage';
+import { AdminSecurityTab } from './AdminSecurityTab';
 import { DeleteDriverModal } from './DeleteDriverModal';
 import { 
   ShieldCheck, 
@@ -59,7 +60,8 @@ type AdminTab =
   | 'reports' 
   | 'notifications' 
   | 'audit'
-  | 'database_storage';
+  | 'database_storage'
+  | 'security';
 
 export const AdminDashboard: React.FC = () => {
   const { 
@@ -77,7 +79,10 @@ export const AdminDashboard: React.FC = () => {
     logoutAdmin,
     updateAdminPassword,
     updateAdminCredentials,
-    adminCredentials
+    adminCredentials,
+    allUsers,
+    allRides,
+    allDrivers
   } = useRide();
 
   const [currentTab, setCurrentTab] = useState<AdminTab>('overview');
@@ -95,7 +100,6 @@ export const AdminDashboard: React.FC = () => {
   } | null>(null);
   const [copiedPin, setCopiedPin] = useState(false);
   const [isProcessingId, setIsProcessingId] = useState<string | null>(null);
-  const [isSimulating, setIsSimulating] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [showLogoutConfirmModal, setShowLogoutConfirmModal] = useState(false);
   const [pendingLogoutTarget, setPendingLogoutTarget] = useState<'default' | 'driver'>('default');
@@ -129,23 +133,43 @@ export const AdminDashboard: React.FC = () => {
   const [couponsList, setCouponsList] = useState([
     { code: 'RAPIDOTOTO', discount: 25, maxDiscount: 20, minFare: 25, active: true, expiry: '31 Dec 2025' },
     { code: 'GREENRIDE', discount: 20, maxDiscount: 15, minFare: 20, active: true, expiry: '31 Dec 2025' },
-    { code: 'WELCOME50', discount: 50, maxDiscount: 35, minFare: 30, active: true, expiry: '31 Dec 2025' },
-    { code: 'RAINYDAY', discount: 15, maxDiscount: 15, minFare: 30, active: false, expiry: '15 Jun 2025' }
+    { code: 'WELCOME50', discount: 50, maxDiscount: 35, minFare: 30, active: true, expiry: '31 Dec 2025' }
   ]);
   const [newCouponCode, setNewCouponCode] = useState('');
   const [newCouponDiscount, setNewCouponDiscount] = useState(20);
   const [newCouponMax, setNewCouponMax] = useState(15);
 
-  // Audit logs state
-  const [auditLogs, setAuditLogs] = useState([
-    { id: '1', action: 'Driver Approved', actor: 'Admin (Subrata)', target: 'Bikram Naskar (WB-24-ER-8841)', time: 'Today, 09:15 AM' },
-    { id: '2', action: 'Surge Multiplier Set', actor: 'Admin (Koushik)', target: '1.2x Peak Rush Sector V', time: 'Today, 08:30 AM' },
-    { id: '3', action: 'Coupon Created', actor: 'System', target: 'RAPIDOTOTO (25% off)', time: 'Yesterday, 11:00 AM' },
-    { id: '4', action: 'Dispute Refund Credited', actor: 'Admin (Subrata)', target: 'Subrata Naskar (₹50)', time: 'Yesterday, 04:20 PM' }
-  ]);
+  // Audit logs state - real operational logs persisted in storage
+  const [auditLogs, setAuditLogs] = useState<Array<{ id: string; action: string; actor: string; target: string; time: string }>>(() => {
+    try {
+      const stored = localStorage.getItem('toto_admin_audit_logs');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const pendingList = driverApprovals.filter((a) => a.status === 'pending');
   const approvedList = driverApprovals.filter((a) => a.status === 'approved');
+
+  // Live KPI metrics derived directly from real production databases
+  const completedRidesCount = allRides.filter((r) => r.status === 'completed').length;
+  const cancelledRidesCount = allRides.filter((r) => r.status === 'cancelled').length;
+  const liveActiveRidesCount = allRides.filter((r) => 
+    r.status === 'in_progress' || 
+    r.status === 'driver_assigned' || 
+    r.status === 'driver_arriving' || 
+    r.status === 'driver_arrived' || 
+    r.status === 'searching'
+  ).length + (activeRide && !allRides.some((r) => r.id === activeRide.id) && activeRide.status !== 'completed' && activeRide.status !== 'cancelled' ? 1 : 0);
+  
+  const totalGrossRevenue = allRides
+    .filter((r) => r.status === 'completed')
+    .reduce((sum, r) => sum + (Number((r as any).totalFare ?? r.fare) || 0), 0);
+
+  const completionRate = allRides.length > 0 ? ((completedRidesCount / allRides.length) * 100).toFixed(1) : '0.0';
+  const cancellationRate = allRides.length > 0 ? ((cancelledRidesCount / allRides.length) * 100).toFixed(1) : '0.0';
+  const onlineDriversCount = allDrivers.filter((d) => d.isOnline && d.availabilityStatus !== 'offline' && d.availabilityStatus !== 'inactive').length;
 
   // Handle Approve action
   const handleApprove = async (approval: DriverApprovalRequest) => {
@@ -282,52 +306,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Simulate a new Toto Driver Registration to test pending queue
-  const handleSimulateNewRegistration = async () => {
-    setIsSimulating(true);
-    triggerSound('beep');
-    const sampleAvatars = [
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=400&auto=format&fit=crop&q=80'
-    ];
-    const sampleTotoPhotos = [
-      'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=600&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1558980664-769d59546b3d?w=600&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&auto=format&fit=crop&q=80'
-    ];
-    const randomNames = ['Tapas Das', 'Rajesh Halder', 'Bishal Saha', 'Swapan Roy', 'Manoj Mondal'];
-    const randomModels = ['Mayuri Pro Li-ion E-Rickshaw', 'Saarthi Smart Electric', 'Kinetic Safar Smart', 'Terra Y4A Deluxe'];
-    const randomColors = ['Emerald Green', 'Canary Yellow', 'Electric Blue', 'Saffron Orange'];
-    const randNum = Math.floor(1000 + Math.random() * 9000);
-    const chosenName = randomNames[Math.floor(Math.random() * randomNames.length)];
-    const chosenModel = randomModels[Math.floor(Math.random() * randomModels.length)];
-    const chosenColor = randomColors[Math.floor(Math.random() * randomColors.length)];
-    const chosenAvatar = sampleAvatars[Math.floor(Math.random() * sampleAvatars.length)];
-    const phone = `+91 983${Math.floor(1000000 + Math.random() * 8999999)}`;
-
-    try {
-      await registerDriverApproval({
-        driverName: chosenName,
-        phone,
-        vehicleType: 'toto',
-        vehicleNumber: `WB-19-T-${randNum}`,
-        vehicleModel: chosenModel,
-        vehicleColor: chosenColor,
-        driverPhoto: chosenAvatar,
-        totoPhotos: sampleTotoPhotos
-      });
-      setCurrentTab('overview');
-      setActiveApprovalSubTab('pending');
-      setActionNotice(`New registration received: ${chosenName} (${chosenModel}) added to pending queue.`);
-    } catch (err) {
-      console.error('Simulation failed:', err);
-    } finally {
-      setIsSimulating(false);
-    }
-  };
-
   const handleTestLoginAsDriver = async (phone: string, pin: string) => {
     triggerSound('success');
     const res = await loginDriverWithPin(phone, pin);
@@ -390,24 +368,8 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick Simulation & Switch Buttons */}
+        {/* Role Switch & Credentials Buttons */}
         <div className="flex items-center gap-2">
-          <button
-            id="admin-simulate-registration-btn"
-            type="button"
-            disabled={isSimulating}
-            onClick={handleSimulateNewRegistration}
-            className="px-3.5 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
-            title="Register a sample driver to test approval flow"
-          >
-            {isSimulating ? (
-              <RotateCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <PlusCircle className="w-3.5 h-3.5" />
-            )}
-            <span>Simulate</span>
-          </button>
-
           <button
             type="button"
             onClick={() => setActiveRole('driver')}
@@ -423,15 +385,17 @@ export const AdminDashboard: React.FC = () => {
             type="button"
             onClick={() => {
               triggerSound('beep');
-              setNewUsernameVal(adminCredentials?.username || 'Admin');
-              setShowPasswordModal(true);
-              setPasswordNotice(null);
+              setCurrentTab('security');
             }}
-            className="px-3 py-2 rounded-2xl bg-white border border-neutral-200 hover:bg-neutral-50 active:scale-95 text-neutral-800 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-            title="Update Admin Username & Password"
+            className={`px-3 py-2 rounded-2xl border text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer ${
+              currentTab === 'security'
+                ? 'bg-neutral-900 text-white border-neutral-900'
+                : 'bg-white border-neutral-200 hover:bg-neutral-50 active:scale-95 text-neutral-800'
+            }`}
+            title="Admin Security & Account"
           >
-            <Key className="w-3.5 h-3.5 text-[#C8622A]" />
-            <span>Credentials ({adminCredentials?.username || 'Admin'})</span>
+            <ShieldCheck className="w-3.5 h-3.5 text-[#C8622A]" />
+            <span>Admin Security</span>
           </button>
 
           <button
@@ -481,6 +445,7 @@ export const AdminDashboard: React.FC = () => {
           { id: 'reports', label: 'Reports & CSV', icon: BarChart3 },
           { id: 'notifications', label: 'Broadcasts', icon: Bell },
           { id: 'database_storage', label: 'Database & Storage', icon: Database },
+          { id: 'security', label: 'Admin Security', icon: ShieldCheck },
           { id: 'audit', label: 'Audit Logs', icon: FileText }
         ].map((tab) => {
           const Icon = tab.icon;
@@ -513,13 +478,13 @@ export const AdminDashboard: React.FC = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <div className="p-3.5 bg-white rounded-2xl border border-neutral-200 shadow-2xs">
               <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Total Customers</div>
-              <div className="text-2xl font-extrabold text-neutral-900 mt-1">1,468</div>
-              <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">Active Riders</div>
+              <div className="text-2xl font-extrabold text-neutral-900 mt-1">{allUsers.length}</div>
+              <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">{allUsers.filter((u) => u.status === 'active' || !u.status).length} Active Riders</div>
             </div>
 
             <div className="p-3.5 bg-white rounded-2xl border border-neutral-200 shadow-2xs">
               <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Total Drivers</div>
-              <div className="text-2xl font-extrabold text-neutral-900 mt-1">{approvedList.length + 4}</div>
+              <div className="text-2xl font-extrabold text-neutral-900 mt-1">{allDrivers.length}</div>
               <div className="text-[10px] text-neutral-500 font-semibold mt-0.5">Registered Fleet</div>
             </div>
 
@@ -528,37 +493,37 @@ export const AdminDashboard: React.FC = () => {
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 <span>Online Drivers</span>
               </div>
-              <div className="text-2xl font-extrabold text-emerald-600 mt-1">{simulatedDrivers.length}</div>
+              <div className="text-2xl font-extrabold text-emerald-600 mt-1">{onlineDriversCount}</div>
               <div className="text-[10px] text-neutral-500 font-semibold mt-0.5">Live on Map</div>
             </div>
 
             <div className="p-3.5 bg-white rounded-2xl border border-neutral-200 shadow-2xs">
               <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Active Rides</div>
-              <div className="text-2xl font-extrabold text-blue-600 mt-1">{activeRide ? 1 : 2}</div>
+              <div className="text-2xl font-extrabold text-blue-600 mt-1">{liveActiveRidesCount}</div>
               <div className="text-[10px] text-neutral-500 font-semibold mt-0.5">Trips in progress</div>
             </div>
 
             <div className="p-3.5 bg-white rounded-2xl border border-neutral-200 shadow-2xs">
               <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Completed Rides</div>
-              <div className="text-2xl font-extrabold text-neutral-900 mt-1">324</div>
-              <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">94.7% Success</div>
+              <div className="text-2xl font-extrabold text-neutral-900 mt-1">{completedRidesCount}</div>
+              <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">{completionRate}% Success</div>
             </div>
 
             <div className="p-3.5 bg-white rounded-2xl border border-neutral-200 shadow-2xs">
               <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Cancelled Rides</div>
-              <div className="text-2xl font-extrabold text-rose-600 mt-1">18</div>
-              <div className="text-[10px] text-neutral-400 font-semibold mt-0.5">5.3% Cancel Rate</div>
+              <div className="text-2xl font-extrabold text-rose-600 mt-1">{cancelledRidesCount}</div>
+              <div className="text-[10px] text-neutral-400 font-semibold mt-0.5">{cancellationRate}% Cancel Rate</div>
             </div>
 
             <div className="p-3.5 bg-white rounded-2xl border border-neutral-200 shadow-2xs">
               <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Today's Revenue</div>
-              <div className="text-2xl font-extrabold text-neutral-900 mt-1 font-mono">₹14,850</div>
-              <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">+14% vs yesterday</div>
+              <div className="text-2xl font-extrabold text-neutral-900 mt-1 font-mono">₹{totalGrossRevenue.toLocaleString()}</div>
+              <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">Live Gross GMV</div>
             </div>
 
             <div className="p-3.5 bg-white rounded-2xl border border-neutral-200 shadow-2xs">
               <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Today's Bookings</div>
-              <div className="text-2xl font-extrabold text-neutral-900 mt-1">342</div>
+              <div className="text-2xl font-extrabold text-neutral-900 mt-1">{allRides.length}</div>
               <div className="text-[10px] text-neutral-500 font-semibold mt-0.5">Dispatches</div>
             </div>
 
@@ -580,8 +545,8 @@ export const AdminDashboard: React.FC = () => {
 
             <div className="p-3.5 bg-white rounded-2xl border border-neutral-200 shadow-2xs">
               <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Support Tickets</div>
-              <div className="text-2xl font-extrabold text-neutral-900 mt-1">2</div>
-              <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">All under SLA</div>
+              <div className="text-2xl font-extrabold text-neutral-900 mt-1">0</div>
+              <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">No open tickets</div>
             </div>
           </div>
 
@@ -645,7 +610,7 @@ export const AdminDashboard: React.FC = () => {
                       : 'text-neutral-600'
                   }`}
                 >
-                  Approved Captains ({approvedList.length + 4})
+                  Approved Captains ({approvedList.length})
                 </button>
               </div>
             </div>
@@ -1099,6 +1064,9 @@ export const AdminDashboard: React.FC = () => {
 
       {/* TAB 11: DATABASE & DATA STORAGE */}
       {currentTab === 'database_storage' && <AdminDatabaseStorage />}
+
+      {/* TAB 12: ADMIN SECURITY & CREDENTIALS */}
+      {currentTab === 'security' && <AdminSecurityTab />}
 
       {/* DETAILS REVIEW MODAL */}
       {selectedReviewDriver && (
@@ -1694,7 +1662,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             <form
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
                 if (!newUsernameVal.trim() || newUsernameVal.trim().length < 3) {
                   setPasswordNotice({ success: false, msg: 'Username must be at least 3 characters long.' });
@@ -1708,7 +1676,7 @@ export const AdminDashboard: React.FC = () => {
                   setPasswordNotice({ success: false, msg: 'Passwords do not match.' });
                   return;
                 }
-                const res = updateAdminCredentials(newUsernameVal, newPasswordVal);
+                const res = await updateAdminCredentials(newUsernameVal, newPasswordVal);
                 if (res.success) {
                   setPasswordNotice({ success: true, msg: 'Credentials successfully updated!' });
                   setAuditLogs(prev => [

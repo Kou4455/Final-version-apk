@@ -25,6 +25,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { useBackHandler } from '../../hooks/useBackHandler';
 import { ChatModal } from '../modals/ChatModal';
 import { TripCelebrationModal, CompletedTripSummary } from './TripCelebrationModal';
 import { DriverTripsPage } from './DriverTripsPage';
@@ -61,7 +62,6 @@ export const DriverDashboard: React.FC = () => {
   const [celebratedTripData, setCelebratedTripData] = useState<CompletedTripSummary | null>(null);
   const [showUpiQrModal, setShowUpiQrModal] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-  const [isSimulatingTrip, setIsSimulatingTrip] = useState(false);
 
   // 1. Ride Request Notification Banner State
   const [incomingRequest, setIncomingRequest] = useState<RideRequestDoc | null>(null);
@@ -74,7 +74,7 @@ export const DriverDashboard: React.FC = () => {
   const [dashboardTotalEarnings, setDashboardTotalEarnings] = useState<number>(0);
   const [dashboardTodayEarnings, setDashboardTodayEarnings] = useState<number>(0);
 
-  const isOnline = driver?.isOnline ?? true;
+  const isOnline = Boolean(driver?.isOnline && driver?.availabilityStatus !== 'offline' && driver?.availabilityStatus !== 'inactive');
 
   // Real-Time Mobile GPS Tracking for Driver / Toto Partner
   const {
@@ -99,12 +99,21 @@ export const DriverDashboard: React.FC = () => {
   // Active target ride to show (either pending incoming or accepted active ride)
   const currentRide = pendingDriverRequest || (activeRide && activeRide.status !== 'completed' && activeRide.status !== 'cancelled' ? activeRide : null);
 
+  // Mobile Android/iOS System Back Navigation Handlers
+  useBackHandler('driver:modal:chat', isDriverChatOpen, () => setIsDriverChatOpen(false), 20);
+  useBackHandler('driver:modal:celebration', showCelebrationModal, () => setShowCelebrationModal(false), 20);
+  useBackHandler('driver:modal:upiQr', showUpiQrModal, () => setShowUpiQrModal(false), 20);
+  useBackHandler('driver:banner:request', showRequestBanner, () => setShowRequestBanner(false), 15);
+  useBackHandler('driver:tab:rides', activeNavTab === 'rides', () => setActiveNavTab('home'), 10);
+  useBackHandler('driver:tab:profile', activeNavTab === 'profile', () => setActiveNavTab('home'), 10);
+
   // Bottom Navigation listeners
   useEffect(() => {
     const handleOpenProfile = () => setActiveNavTab('profile');
     const handleOpenHistory = () => setActiveNavTab('rides');
     const handleCloseAll = () => {
       setActiveNavTab('home');
+      setIsDriverChatOpen(false);
       setShowCelebrationModal(false);
       setShowUpiQrModal(false);
     };
@@ -255,47 +264,15 @@ export const DriverDashboard: React.FC = () => {
       records.sort((a, b) => new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime());
       setCompletedTrips(records);
 
-      // Seed calculation if fresh driver record
-      const effectiveTotal = records.length > 0 ? total : (driver.todayEarnings + 3840);
-      const effectiveToday = records.length > 0 ? today : (driver.todayEarnings || 1240);
+      // Real earnings calculation from trips or driver profile
+      const effectiveTotal = records.length > 0 ? total : (driver.totalEarnings || 0);
+      const effectiveToday = records.length > 0 ? today : (driver.todayEarnings || 0);
       setDashboardTotalEarnings(effectiveTotal);
       setDashboardTodayEarnings(effectiveToday);
     });
 
     return () => unsubscribe();
-  }, [driver?.id, driver?.todayEarnings]);
-
-  // Simulate a completed trip directly in 'trips' collection
-  const handleSimulateCompletedTrip = async () => {
-    if (!driver) return;
-    setIsSimulatingTrip(true);
-    triggerSound('success');
-
-    const tripFare = 55 + Math.floor(Math.random() * 30);
-    const tripId = `trip_${Date.now()}`;
-    const newTrip: TripRecord = {
-      id: tripId,
-      driverId: driver.id,
-      rideId: `ride_${Date.now().toString().slice(-6)}`,
-      fare: tripFare,
-      status: 'completed',
-      pickupName: 'Sector V Metro Station (Gate 2)',
-      dropoffName: 'City Centre 1 Mall',
-      distanceKm: 2.8,
-      completedAt: new Date().toISOString(),
-      paymentMethod: 'cash',
-      passengerName: 'Sourav Roy'
-    };
-
-    try {
-      appDb.set('trips', tripId, newTrip);
-      confetti({ particleCount: 40, spread: 50, origin: { y: 0.3 } });
-    } catch (err) {
-      console.error('Failed to add simulated trip:', err);
-    } finally {
-      setIsSimulatingTrip(false);
-    }
-  };
+  }, [driver?.id, driver?.todayEarnings, driver?.totalEarnings]);
 
   // Handle Online/Offline Status Toggle Switch and persist
   const handleToggleAvailability = async (forcedStatus?: boolean) => {

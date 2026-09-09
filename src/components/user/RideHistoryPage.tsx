@@ -49,7 +49,7 @@ export const RideHistoryPage: React.FC<RideHistoryPageProps> = ({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
-      className="w-full max-w-3xl mx-auto px-3 sm:px-6 py-3 sm:py-6 space-y-4 sm:space-y-5"
+      className="w-full max-w-3xl mx-auto px-2 sm:px-6 py-2 sm:py-6 space-y-3.5 sm:space-y-5 pb-6 sm:pb-10"
     >
       {/* Top Page Header Bar */}
       <div className="flex items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-3xl border border-[#EDE8E0] shadow-xs">
