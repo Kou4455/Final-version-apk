@@ -84,18 +84,15 @@ if (typeof window !== 'undefined') {
 
   window.addEventListener('appinstalled', () => {
     globalDeferredPrompt = null;
-    try {
-      localStorage.setItem('toto_pwa_installed', 'true');
-      localStorage.setItem('toto_pwa_installed_user', 'true');
-    } catch {}
     promptListeners.forEach((fn) => fn(null));
   });
 }
 
 /**
- * Synchronously checks if the PWA is installed or running in standalone mode
+ * Synchronously checks if the PWA is currently running in standalone/installed display mode
+ * Does NOT rely on a permanent localStorage flag so users who uninstall can reinstall when visiting via browser.
  */
-export function checkIsPWAInstalledSync(role: string = 'user'): boolean {
+export function checkIsPWAInstalledSync(_role: string = 'user'): boolean {
   if (typeof window === 'undefined') return false;
   try {
     const isStandalone =
@@ -105,8 +102,6 @@ export function checkIsPWAInstalledSync(role: string = 'user'): boolean {
       window.matchMedia('(display-mode: fullscreen)').matches ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
       document.referrer.includes('android-app://') ||
-      localStorage.getItem('toto_pwa_installed') === 'true' ||
-      localStorage.getItem(`toto_pwa_installed_${role}`) === 'true' ||
       new URLSearchParams(window.location.search).get('pwa') === 'installed' ||
       new URLSearchParams(window.location.search).get('installed') === 'true';
     return Boolean(isStandalone);
@@ -136,10 +131,6 @@ export function usePWAInstall(currentRoleInput: PWARole | string = 'user') {
     const handleMqlChange = (e: MediaQueryListEvent) => {
       if (e.matches) {
         setIsInstalled(true);
-        try {
-          localStorage.setItem('toto_pwa_installed', 'true');
-          localStorage.setItem(`toto_pwa_installed_${role}`, 'true');
-        } catch {}
       }
     };
 
@@ -188,10 +179,6 @@ export function usePWAInstall(currentRoleInput: PWARole | string = 'user') {
       const choice = await promptToUse.userChoice;
       if (choice && choice.outcome === 'accepted') {
         setIsInstalled(true);
-        try {
-          localStorage.setItem('toto_pwa_installed', 'true');
-          localStorage.setItem(`toto_pwa_installed_${role}`, 'true');
-        } catch {}
         globalDeferredPrompt = null;
         setDeferredPrompt(null);
         promptListeners.forEach((fn) => fn(null));

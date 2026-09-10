@@ -37,6 +37,7 @@ import {
   Landmark,
   Compass,
   Loader2,
+  RotateCw,
   BatteryCharging,
   Clock,
   ArrowRight,
@@ -140,6 +141,7 @@ export const UserDashboard: React.FC = () => {
     cancelOfferSearch,
     createRideBooking, 
     cancelRide, 
+    expireRideBooking,
     dispatchRideRequest,
     rateRide,
     rateRideWithTags,
@@ -195,6 +197,49 @@ export const UserDashboard: React.FC = () => {
     }
     prevRideStatusRef.current = activeRide?.status || null;
   }, [activeRide?.status, triggerSound]);
+
+  // Server-Authoritative Ride Expiration Countdown (45s window)
+  const [waitingCountdown, setWaitingCountdown] = useState<number | null>(null);
+  useEffect(() => {
+    const isWaiting = activeRide && (activeRide.status === 'searching' || (activeRide.status as any) === 'SEARCHING_DRIVER');
+    if (!isWaiting) {
+      setWaitingCountdown(null);
+      return;
+    }
+
+    const computeSec = () => {
+      if (activeRide.expiresAt) {
+        const diffMs = new Date(activeRide.expiresAt).getTime() - Date.now();
+        return Math.max(0, Math.ceil(diffMs / 1000));
+      }
+      const created = activeRide.createdAt ? new Date(activeRide.createdAt).getTime() : Date.now();
+      const diffMs = (created + 45000) - Date.now();
+      return Math.max(0, Math.ceil(diffMs / 1000));
+    };
+
+    const initialSec = computeSec();
+    setWaitingCountdown(initialSec);
+
+    if (initialSec <= 0) {
+      expireRideBooking(activeRide.id);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      const remaining = computeSec();
+      setWaitingCountdown(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+        expireRideBooking(activeRide.id);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [activeRide?.id, activeRide?.status, activeRide?.expiresAt, activeRide?.createdAt, expireRideBooking]);
+
+  const formattedCountdown = waitingCountdown !== null
+    ? `00:${waitingCountdown < 10 ? '0' : ''}${waitingCountdown}`
+    : '00:45';
   const [notificationToast, setNotificationToast] = useState<{
     driverName: string;
     vehicleNumber: string;
@@ -674,7 +719,7 @@ export const UserDashboard: React.FC = () => {
       }`}
     >
       {/* Top-screen Notification: Waiting for Captain to Accept */}
-      {activeRide && activeRide.status === 'searching' && (
+      {activeRide && (activeRide.status === 'searching' || (activeRide.status as any) === 'SEARCHING_DRIVER') && (
         <div 
           id="waiting-captain-notification"
           className="fixed top-[calc(0.75rem+env(safe-area-inset-top,0px))] sm:top-[calc(1.25rem+env(safe-area-inset-top,0px))] left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md bg-[#181818] text-white p-3.5 sm:p-4 rounded-3xl shadow-[0_12px_36px_rgba(0,0,0,0.35)] border border-[#333333] flex items-center justify-between gap-3 animate-in slide-in-from-top-4 duration-300"
@@ -690,7 +735,9 @@ export const UserDashboard: React.FC = () => {
                 <h4 className="text-xs sm:text-sm font-extrabold text-white tracking-tight truncate">
                   Waiting for captain to accept
                 </h4>
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+                <span className="text-[10px] font-mono bg-[#FF6B2C]/20 border border-[#FF6B2C]/40 text-[#FF824D] px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
+                  Expires in {formattedCountdown}
+                </span>
               </div>
               <p className="text-[11px] text-gray-300 truncate mt-0.5">
                 Broadcasting request to nearby Toto captains...
@@ -1421,7 +1468,7 @@ export const UserDashboard: React.FC = () => {
           className="w-full space-y-3 shadow-xs animate-in fade-in duration-300 px-2.5 sm:px-0"
         >
           {/* Status 1: Ride Requested / Searching for Nearby Captains */}
-          {activeRide.status === 'searching' && (
+          {(activeRide.status === 'searching' || (activeRide.status as any) === 'SEARCHING_DRIVER') && (
             <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-xs border border-[#EDE8E0] space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 min-w-0">
@@ -1454,8 +1501,11 @@ export const UserDashboard: React.FC = () => {
 
               <div className="flex items-center justify-between gap-3 pt-1">
                 <div className="flex items-center gap-2 text-xs text-neutral-600 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-                  <span>Waiting for captain to accept...</span>
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+                  <span>Waiting for captain to accept</span>
+                  <span className="text-[10px] font-mono bg-neutral-100 text-neutral-700 px-2 py-0.5 rounded-full font-bold">
+                    Expires in {formattedCountdown}
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -1466,6 +1516,58 @@ export const UserDashboard: React.FC = () => {
                   className="py-2 px-3.5 bg-[#FEE2E2] hover:bg-[#FECACA] text-[#DC2626] text-xs font-bold rounded-xl transition-colors cursor-pointer"
                 >
                   Cancel Request
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Status 1B: No Captain Accepted the Ride (Expired State) */}
+          {(activeRide.status === 'no_driver_accepted' || (activeRide.status as any) === 'NO_DRIVER_ACCEPTED' || (activeRide.status as any) === 'expired') && (
+            <div className="w-full bg-white rounded-3xl p-5 shadow-xs border border-amber-200 space-y-4 animate-in fade-in">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 text-amber-600">
+                  <Clock className="w-6 h-6" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-extrabold text-[#111111]">
+                    No Captain accepted the ride
+                  </h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    Nearby Toto captains are currently busy or out of range. You can retry your request or cancel.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-[#F8F7F4] rounded-2xl p-3 flex items-center justify-between text-xs">
+                <span className="text-neutral-600 font-medium">Estimated Fare:</span>
+                <span className="font-extrabold text-[#111111] text-sm">₹{activeRide.totalFare || currentFare}</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    cancelRide('Booking cancelled after timeout');
+                    triggerSound('beep');
+                  }}
+                  className="py-3 px-4 rounded-2xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs transition-colors cursor-pointer text-center"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const p = activeRide.pickup;
+                    const d = activeRide.dropoff;
+                    const v = activeRide.vehicleType;
+                    const pm = activeRide.paymentMethod;
+                    createRideBooking(p, d, v, pm);
+                    triggerSound('alert');
+                  }}
+                  className="py-3 px-4 rounded-2xl bg-[#FF6B2C] hover:bg-[#E55A1F] text-white font-extrabold text-xs transition-colors cursor-pointer shadow-xs text-center flex items-center justify-center gap-1.5"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>Retry Booking</span>
                 </button>
               </div>
             </div>

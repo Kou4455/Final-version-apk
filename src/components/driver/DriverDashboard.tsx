@@ -22,7 +22,8 @@ import {
   ArrowRight,
   Sparkles,
   Layers,
-  MessageSquare
+  MessageSquare,
+  AlertCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useBackHandler } from '../../hooks/useBackHandler';
@@ -62,6 +63,7 @@ export const DriverDashboard: React.FC = () => {
   const [celebratedTripData, setCelebratedTripData] = useState<CompletedTripSummary | null>(null);
   const [showUpiQrModal, setShowUpiQrModal] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [doubleAcceptWarning, setDoubleAcceptWarning] = useState<string | null>(null);
 
   // 1. Ride Request Notification Banner State
   const [incomingRequest, setIncomingRequest] = useState<RideRequestDoc | null>(null);
@@ -269,27 +271,35 @@ export const DriverDashboard: React.FC = () => {
     }
   };
 
-  // Handle Accept
-  const handleAccept = () => {
-    if (currentRide) {
-      driverAcceptRide(currentRide.id);
-      setJustAccepted(true);
+  // Handle Accept with atomic double-accept protection
+  const handleAccept = async () => {
+    const targetRide = pendingDriverRequest || currentRide;
+    if (targetRide) {
+      setDoubleAcceptWarning(null);
+      const res = await driverAcceptRide(targetRide.id);
+      if (res && !res.success) {
+        setDoubleAcceptWarning(res.message || 'Ride already accepted by another Captain');
+        setTimeout(() => setDoubleAcceptWarning(null), 5000);
+      } else {
+        setJustAccepted(true);
+      }
     }
   };
 
   // Handle Decline / Cancel
   const handleDecline = () => {
-    if (currentRide) {
-      driverDeclineRide(currentRide.id);
+    const targetRide = pendingDriverRequest || currentRide;
+    if (targetRide) {
+      driverDeclineRide(targetRide.id);
       setJustAccepted(false);
     }
   };
 
-  // Refresh feed
+  // Refresh feed - purely syncs location, never generates fake rides
   const handleRefreshClick = () => {
     triggerSound('beep');
-    if (!currentRide && isOnline) {
-      createRideBooking(POPULAR_LOCATIONS[0], POPULAR_LOCATIONS[1], 'toto', 'cash');
+    if (driverGpsPoint && updateDriverGpsPoint) {
+      updateDriverGpsPoint(driverGpsPoint);
     }
   };
 
@@ -351,9 +361,106 @@ export const DriverDashboard: React.FC = () => {
       ) : (
         <>
           {/* -------------------------------------------------------------------------- */}
-          {/* FEATURE 1: RIDE REQUEST NOTIFICATION BANNER (Top of DriverDashboard)        */}
+          {/* FEATURE 1: REAL PASSENGER RIDE REQUEST NOTIFICATION BANNER (Top of Screen)  */}
           {/* -------------------------------------------------------------------------- */}
-      {showRequestBanner && incomingRequest && isOnline && (
+          {pendingDriverRequest && isOnline && (!activeRide || activeRide.status === 'completed' || activeRide.status === 'cancelled') && (
+            <div 
+              id="driver-real-ride-request-banner"
+              className="bg-[#181818] text-white rounded-3xl p-4 shadow-2xl border-2 border-[#FF6B2C] animate-in slide-in-from-top-4 duration-300 space-y-3"
+            >
+              {/* Top Banner Row */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="relative flex h-3.5 w-3.5 shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FF6B2C] opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-[#FF6B2C]"></span>
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold tracking-wider uppercase text-[#FF6B2C] flex items-center gap-1">
+                      <Bell className="w-3.5 h-3.5" />
+                      <span>NEW RIDE REQUEST!</span>
+                    </div>
+                    <div className="text-sm font-extrabold text-white truncate">
+                      ₹{pendingDriverRequest.totalFare} · {pendingDriverRequest.userName || 'Passenger'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[10px] font-mono text-[#FF824D] bg-[#FF6B2C]/20 border border-[#FF6B2C]/40 px-2 py-0.5 rounded-full font-bold">
+                    {pendingDriverRequest.vehicleType?.toUpperCase() || 'TOTO'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => driverDeclineRide(pendingDriverRequest.id)}
+                    className="w-7 h-7 rounded-full bg-neutral-800 hover:bg-neutral-700 flex items-center justify-center text-neutral-400 hover:text-white cursor-pointer transition-colors"
+                    title="Dismiss Request"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Route Info: Pickup & Destination */}
+              <div className="bg-neutral-900/90 rounded-2xl p-3 text-xs space-y-2 border border-neutral-800">
+                <div className="flex items-center gap-2.5 truncate text-neutral-300">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#FF6B2C] shrink-0" />
+                  <span className="truncate font-medium">Pickup: <strong className="text-white">{pendingDriverRequest.pickup.name || pendingDriverRequest.pickup.address}</strong></span>
+                </div>
+                <div className="flex items-center gap-2.5 truncate text-neutral-300">
+                  <span className="w-2.5 h-2.5 rounded-xs bg-emerald-400 shrink-0" />
+                  <span className="truncate font-medium">Dropoff: <strong className="text-white font-bold">{pendingDriverRequest.dropoff.name || pendingDriverRequest.dropoff.address}</strong></span>
+                </div>
+              </div>
+
+              {/* Actions: ACCEPT and REJECT */}
+              <div className="flex items-center gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => driverDeclineRide(pendingDriverRequest.id)}
+                  className="flex-1 py-3 bg-neutral-800 hover:bg-neutral-700 active:scale-95 text-neutral-300 rounded-2xl text-xs font-bold cursor-pointer transition-all"
+                >
+                  REJECT
+                </button>
+                <button
+                  id="captain-accept-request-btn"
+                  type="button"
+                  onClick={handleAccept}
+                  className="flex-2 py-3 bg-[#FF6B2C] hover:bg-[#E55A1F] active:scale-95 text-white rounded-2xl text-xs font-black shadow-md cursor-pointer flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  <span>ACCEPT RIDE (₹{pendingDriverRequest.totalFare})</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Double Accept or Expiration Warning Notice */}
+          {doubleAcceptWarning && (
+            <div 
+              id="double-accept-warning-banner"
+              className="bg-red-900/90 text-white rounded-3xl p-3.5 shadow-2xl border-2 border-red-500 animate-in slide-in-from-top-4 duration-300 flex items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-red-500/20 border border-red-400 flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-4 h-4 text-red-300" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold text-red-300 uppercase tracking-wide">Notice</div>
+                  <div className="text-xs sm:text-sm font-extrabold text-white truncate">{doubleAcceptWarning}</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDoubleAcceptWarning(null)}
+                className="w-7 h-7 rounded-full bg-red-800 hover:bg-red-700 flex items-center justify-center text-white shrink-0 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+      {showRequestBanner && incomingRequest && isOnline && !pendingDriverRequest && (
         <div 
           id="driver-ride-request-banner"
           className="bg-[#181818] text-white rounded-3xl p-4 shadow-2xl border-2 border-[#FF6B2C] animate-in slide-in-from-top-4 duration-300 space-y-3"

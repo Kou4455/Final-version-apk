@@ -47,6 +47,7 @@ import {
   createRideRequestApi,
   getActiveRideApi,
   driverAcceptRideApi,
+  expireRideApi,
   driverArrivedApi,
   driverStartRideApi,
   driverCompleteRideApi,
@@ -140,11 +141,12 @@ interface RideContextType {
     promoCode?: string
   ) => Promise<ActiveRide>;
   cancelRide: (reason?: string) => Promise<void>;
+  expireRideBooking: (rideId: string) => Promise<void>;
   rateRide: (rating: number, feedback: string) => Promise<void>;
   advanceRideStage: () => Promise<void>;
   
   // Driver Actions
-  driverAcceptRide: (rideId: string) => Promise<void>;
+  driverAcceptRide: (rideId: string) => Promise<{ success: boolean; message?: string }>;
   driverDeclineRide: (rideId: string) => void;
   driverArriveAtPickup: () => Promise<void>;
   driverStartRideWithOtp: (otpInput: string) => Promise<{ success: boolean; message: string }>;
@@ -164,7 +166,7 @@ interface RideContextType {
     totoPhotos?: string[];
   }) => Promise<{ approvalId: string; message: string }>;
   approveDriverRegistration: (approvalId: string, customPin?: string) => Promise<{ pin: string }>;
-  rejectDriverRegistration: (approvalId: string) => Promise<void>;
+  rejectDriverRegistration: (approvalId: string, reason?: string) => Promise<void>;
   deleteDriverProfile: (idOrPhone: string) => Promise<{ success: boolean; message: string }>;
   loginDriverWithPin: (phone: string, pin: string) => Promise<{ success: boolean; message?: string }>;
   updateDriverVehicleDetails: (details: {
@@ -966,9 +968,16 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const unsubscribe = appDb.subscribe<ActiveRide>('rides', (allRides) => {
-      const candidates = allRides.filter(
-        (r) => r.status === 'searching' && (!r.driverId || r.driverId === driver.id)
-      );
+      const now = Date.now();
+      const candidates = allRides.filter((r) => {
+        const isSearching = r.status === 'searching' || (r.status as any) === 'SEARCHING_DRIVER';
+        if (!isSearching) return false;
+        // Check if expired
+        if (r.expiresAt && new Date(r.expiresAt).getTime() <= now) return false;
+        // Check driverId if targeted
+        if (r.driverId && r.driverId !== driver.id) return false;
+        return true;
+      });
 
       if (candidates.length > 0) {
         // Pick newest searching request
@@ -1350,28 +1359,31 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Admin rejects driver registration
-  const rejectDriverRegistration = async (approvalId: string): Promise<void> => {
+  const rejectDriverRegistration = async (approvalId: string, reason?: string): Promise<void> => {
     try {
+      const adminNotes = reason?.trim() || 'Application does not meet current fleet verification criteria.';
       appDb.update('driver_approvals', approvalId, {
         status: 'rejected',
+        adminNotes,
         updatedAt: new Date().toISOString()
       });
 
       // Sync with server backend & Firestore
-      rejectDriverRegistrationApi(approvalId).catch((err) => console.warn('Server reject warning:', err));
+      rejectDriverRegistrationApi(approvalId, adminNotes).catch((err) => console.warn('Server reject warning:', err));
       updateDriverApprovalInFirestore(approvalId, {
         status: 'rejected',
+        adminNotes,
         updatedAt: new Date().toISOString()
       }).catch((err) => console.warn('Firestore reject update warning:', err));
 
       setDriverApprovals((prev) =>
         prev.map((a) =>
-          a.id === approvalId ? { ...a, status: 'rejected', updatedAt: new Date().toISOString() } : a
+          a.id === approvalId ? { ...a, status: 'rejected', adminNotes, updatedAt: new Date().toISOString() } : a
         )
       );
       setPendingApprovalsCount((prev) => Math.max(0, prev - 1));
 
-      triggerSound('beep');
+      triggerSound('alert');
     } catch (error) {
       console.error('Driver rejection error:', error);
       throw error;
@@ -1888,6 +1900,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
           status: 'searching',
           otp: r.otp,
           bookedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          createdAt: r.createdAt || new Date().toISOString(),
+          expiresAt: r.expiresAt || new Date(Date.now() + 45 * 1000).toISOString(),
           driverLocation: {
             lat: Number((pickup.lat + 0.0032).toFixed(6)),
             lng: Number((pickup.lng + 0.0028).toFixed(6)),
@@ -1926,6 +1940,8 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const totalFare = Math.max(15, subtotal - discount);
     const driverEarnings = Math.round(totalFare * 0.88);
     const rideId = `ride_${Date.now().toString().slice(-6)}`;
+    const nowIso = new Date().toISOString();
+    const expiresAtIso = new Date(Date.now() + 45 * 1000).toISOString();
 
     const newRide: ActiveRide = {
       id: rideId,
@@ -1946,7 +1962,9 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       paymentStatus: 'pending',
       status: 'searching',
       otp: generate4DigitOtp(),
-      bookedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      bookedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: nowIso,
+      expiresAt: expiresAtIso
     };
 
     setActiveRide(newRide);
@@ -1962,17 +1980,49 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newRide;
   };
 
-  // Driver Accepts Ride
-  const driverAcceptRide = async (rideId: string) => {
-    if (!driver) return;
-    const current = pendingDriverRequest || activeRide || allRides.find((r) => r.id === rideId);
-    if (!current || current.id !== rideId) return;
+  // Driver Accepts Ride with double accept protection and expiration verification
+  const driverAcceptRide = async (rideId: string): Promise<{ success: boolean; message?: string }> => {
+    if (!driver) return { success: false, message: 'Driver not found.' };
+    const current = pendingDriverRequest || (activeRide && activeRide.id === rideId ? activeRide : null) || allRides.find((r) => r.id === rideId);
+    if (!current || current.id !== rideId) {
+      setPendingDriverRequest(null);
+      return { success: false, message: 'Ride request no longer available.' };
+    }
+
+    // Atomic double-accept check against local state
+    if (current.driverId && current.driverId !== driver.id) {
+      setPendingDriverRequest(null);
+      triggerSound('alert');
+      return { success: false, message: 'Ride already accepted by another Captain' };
+    }
+
+    const isSearching = current.status === 'searching' || (current.status as any) === 'SEARCHING_DRIVER';
+    if (!isSearching) {
+      setPendingDriverRequest(null);
+      triggerSound('alert');
+      return { success: false, message: 'Ride already accepted by another Captain' };
+    }
+
+    // Check if expired
+    if (current.expiresAt && new Date(current.expiresAt).getTime() <= Date.now()) {
+      setPendingDriverRequest(null);
+      triggerSound('alert');
+      return { success: false, message: 'This ride request has expired' };
+    }
 
     // Call atomic acceptance API on backend
     try {
-      await driverAcceptRideApi(rideId, driver.id);
+      const res = await driverAcceptRideApi(rideId, driver.id);
+      if (!res.success) {
+        setPendingDriverRequest(null);
+        triggerSound('alert');
+        return { success: false, message: res.message || 'Ride already accepted by another Captain' };
+      }
     } catch (err: any) {
-      console.warn('Backend driver accept ride advisory:', err.message);
+      // Backend rejected: already claimed by another driver or expired!
+      setPendingDriverRequest(null);
+      triggerSound('alert');
+      return { success: false, message: err.message || 'Ride already accepted by another Captain' };
     }
 
     const assignedDriver = driver;
@@ -2012,6 +2062,27 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error('Error accepting ride:', error);
     }
+    return { success: true };
+  };
+
+  // Expire Ride when passenger waiting countdown ends
+  const expireRideBooking = async (rideId: string) => {
+    try {
+      await expireRideApi(rideId).catch(() => {});
+    } catch {}
+    const updates = {
+      status: 'no_driver_accepted' as const
+    };
+    if (activeRide && activeRide.id === rideId) {
+      setActiveRide((prev) => prev ? { ...prev, ...updates } : null);
+    }
+    if (pendingDriverRequest && pendingDriverRequest.id === rideId) {
+      setPendingDriverRequest(null);
+    }
+    try {
+      appDb.update('rides', rideId, updates);
+      updateRideInFirestore(rideId, updates).catch(() => {});
+    } catch {}
   };
 
   const driverDeclineRide = (_rideId: string) => {
@@ -2630,6 +2701,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateDriverGpsPoint,
         createRideBooking,
         cancelRide,
+        expireRideBooking,
         rateRide,
         advanceRideStage,
         driverAcceptRide,

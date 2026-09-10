@@ -37,13 +37,20 @@ export function generate4DigitOtp(): string {
   return Math.floor(1000 + Math.random() * 9000).toString();
 }
 
+const geocodeCache = new Map<string, { name: string; address: string; zone?: string }>();
+
 /**
- * Reverse geocode coordinates using OpenStreetMap Nominatim with fast fallback
+ * Reverse geocode coordinates using OpenStreetMap Nominatim with fast fallback & in-memory cache
  */
 export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{ name: string; address: string; zone?: string }> {
+  const cacheKey = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+  if (geocodeCache.has(cacheKey)) {
+    return geocodeCache.get(cacheKey)!;
+  }
+
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
       { 
@@ -61,22 +68,26 @@ export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{ 
         const city = addressParts.city || addressParts.town || addressParts.village || addressParts.state_district || 'City Area';
         const suburb = addressParts.suburb || addressParts.neighbourhood || '';
         
-        return {
+        const result = {
           name: suburb ? `${road}, ${suburb}` : road,
           address: data.display_name.split(',').slice(0, 4).join(',').trim(),
           zone: city
         };
+        geocodeCache.set(cacheKey, result);
+        return result;
       }
     }
   } catch (err) {
     console.debug('Reverse geocode error or timeout:', err);
   }
   
-  return {
+  const fallback = {
     name: `Live Location (${lat.toFixed(3)}, ${lng.toFixed(3)})`,
     address: `Kolkata Metro Transit Hub (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
     zone: 'Transit Area'
   };
+  geocodeCache.set(cacheKey, fallback);
+  return fallback;
 }
 
 export function calculateBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {

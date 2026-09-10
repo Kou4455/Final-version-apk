@@ -21,8 +21,12 @@ import {
   Trash2,
   Check,
   Image as ImageIcon,
-  Loader2
+  Loader2,
+  Eye,
+  EyeOff,
+  FileSearch
 } from 'lucide-react';
+import { DriverApprovalRequest } from '../../types';
 import { compressImage, formatFileSize, estimateBase64Size } from '../../utils/imageCompressor';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 import { updateActiveManifestForRole } from '../../hooks/usePWAInstall';
@@ -45,6 +49,7 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
     loginDriver,
     loginDriverWithPin, 
     registerDriverApproval, 
+    driverApprovals,
     pendingApprovalsCount,
     triggerSound, 
     setActiveRole, 
@@ -55,7 +60,34 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
   // Login form state (starts blank with inside placeholder text)
   const [phoneNumber, setPhoneNumber] = useState('');
   const [securityPin, setSecurityPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
+
+  // KYC Status Tracking Modal State
+  const [showKycStatusModal, setShowKycStatusModal] = useState(false);
+  const [kycSearchPhone, setKycSearchPhone] = useState('');
+  const [kycSearchResult, setKycSearchResult] = useState<DriverApprovalRequest | null>(null);
+  const [kycSearched, setKycSearched] = useState(false);
+  const [kycSearching, setKycSearching] = useState(false);
+
+  const handleCheckKycStatus = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanQuery = kycSearchPhone.replace(/\D/g, '');
+    if (!cleanQuery) return;
+    setKycSearching(true);
+    setKycSearched(true);
+    triggerSound('beep');
+
+    // Match by last 10 digits
+    const targetDigits = cleanQuery.length >= 10 ? cleanQuery.slice(-10) : cleanQuery;
+    const match = driverApprovals.find((a) => {
+      const aDigits = a.phone.replace(/\D/g, '');
+      return aDigits.endsWith(targetDigits) || targetDigits.endsWith(aDigits);
+    });
+
+    setKycSearchResult(match || null);
+    setKycSearching(false);
+  };
 
   // Mode: login vs register
   const [isRegisterMode, setIsRegisterMode] = useState(false);
@@ -352,7 +384,7 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
                 <Lock className="w-4 h-4 text-gray-500 mr-2.5 shrink-0" />
                 <input
                   id="driver-pin-input"
-                  type="password"
+                  type={showPin ? 'text' : 'password'}
                   maxLength={4}
                   value={securityPin}
                   onChange={(e) => {
@@ -362,6 +394,15 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
                   placeholder="Enter 4-digit security PIN"
                   className="w-full bg-transparent text-base font-mono font-bold tracking-widest text-[#111111] placeholder-gray-400 focus:outline-none"
                 />
+                <button
+                  type="button"
+                  id="toggle-driver-pin-visibility-btn"
+                  onClick={() => setShowPin(!showPin)}
+                  className="p-1 rounded-lg text-gray-400 hover:text-gray-700 cursor-pointer transition-colors shrink-0 ml-1"
+                  title={showPin ? "Hide PIN" : "Show PIN"}
+                >
+                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
@@ -707,9 +748,228 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
                 <span>Submit For Approval</span>
               )}
             </button>
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                id="check-kyc-status-reg-btn"
+                onClick={() => {
+                  triggerSound('beep');
+                  setKycSearchPhone(regPhone || phoneNumber || '');
+                  setKycSearchResult(null);
+                  setKycSearched(false);
+                  setShowKycStatusModal(true);
+                }}
+                className="text-xs font-bold text-[#C8622A] hover:underline cursor-pointer flex items-center justify-center gap-1.5 mx-auto py-1"
+              >
+                <FileSearch className="w-3.5 h-3.5" />
+                <span>Already applied? Check Application / KYC Status</span>
+              </button>
+            </div>
           </form>
         )}
       </div>
+
+      {/* -------------------------------------------------------------------------- */}
+      {/* KYC APPLICATION STATUS TRACKING MODAL                                      */}
+      {/* -------------------------------------------------------------------------- */}
+      {showKycStatusModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 shadow-2xl border border-neutral-200 space-y-4 animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-[#C8622A]">
+                  <FileSearch className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#111111]">Captain KYC & Application Status</h3>
+                  <p className="text-[11px] text-neutral-500">Track your registration review</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowKycStatusModal(false)}
+                className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-600 font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <form onSubmit={handleCheckKycStatus} className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-neutral-700 block mb-1">
+                  Registered Mobile Number
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 flex items-center bg-[#FAF8F5] border border-neutral-200 rounded-2xl px-3 py-2.5">
+                    <Phone className="w-4 h-4 text-neutral-400 mr-2 shrink-0" />
+                    <input
+                      type="tel"
+                      value={kycSearchPhone}
+                      onChange={(e) => {
+                        setKycSearchPhone(e.target.value);
+                        setKycSearched(false);
+                      }}
+                      placeholder="e.g. 9874522019"
+                      className="w-full bg-transparent text-sm font-bold text-[#111111] focus:outline-none"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!kycSearchPhone.trim() || kycSearching}
+                    className="py-2.5 px-4 bg-[#FF6B2C] hover:bg-[#E55A1F] text-white rounded-2xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    Check Status
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            {/* Search Results */}
+            {kycSearched && (
+              <div className="space-y-3 pt-2">
+                {!kycSearchResult ? (
+                  <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200 text-center space-y-1.5">
+                    <div className="text-xs font-bold text-neutral-800">No application found</div>
+                    <p className="text-[11px] text-neutral-500">
+                      No Captain registration dossier matches this phone number. Please check the digits or register as a new partner.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowKycStatusModal(false);
+                        setIsRegisterMode(true);
+                        setRegPhone(kycSearchPhone);
+                      }}
+                      className="mt-2 py-1.5 px-3 bg-neutral-800 hover:bg-black text-white text-xs font-bold rounded-xl cursor-pointer"
+                    >
+                      Register Now
+                    </button>
+                  </div>
+                ) : kycSearchResult.status === 'pending' ? (
+                  /* Status: PENDING APPROVAL */
+                  <div className="p-4 rounded-2xl bg-amber-50 border-2 border-amber-300 space-y-2.5 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2.5 py-1 rounded-full bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider">
+                        PENDING APPROVAL
+                      </span>
+                      <span className="text-[10px] font-medium text-amber-800">
+                        Submitted: {new Date(kycSearchResult.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-extrabold text-amber-950">
+                        {kycSearchResult.driverName} ({kycSearchResult.vehicleNumber})
+                      </div>
+                      <p className="text-xs text-amber-900 leading-relaxed pt-1">
+                        Your application is under review by Admin. You will receive an SMS/notification once approved.
+                      </p>
+                    </div>
+                    <div className="text-[10px] text-amber-700 bg-amber-100/60 p-2 rounded-xl font-medium">
+                      Admin verification takes up to 2-4 hours during working hours. Please check back shortly!
+                    </div>
+                  </div>
+                ) : kycSearchResult.status === 'approved' ? (
+                  /* Status: APPROVED */
+                  <div className="p-4 rounded-2xl bg-emerald-50 border-2 border-emerald-400 space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" />
+                        APPROVED
+                      </span>
+                      <span className="text-[10px] font-medium text-emerald-800">
+                        {kycSearchResult.vehicleNumber}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-extrabold text-emerald-950">
+                        Congratulations! Your profile is APPROVED.
+                      </div>
+                      <p className="text-xs text-emerald-800 pt-0.5">
+                        Your documents and vehicle verification have been certified by admin.
+                      </p>
+                    </div>
+
+                    {/* Auto-generated PIN Display */}
+                    <div className="bg-white rounded-2xl p-3.5 border border-emerald-200 flex items-center justify-between shadow-2xs">
+                      <div className="flex items-center gap-2.5">
+                        <Key className="w-5 h-5 text-amber-500" />
+                        <div>
+                          <div className="text-[10px] uppercase font-bold text-neutral-400">Your 4-Digit Login PIN</div>
+                          <div className="text-xl font-black font-mono tracking-widest text-neutral-900">
+                            {kycSearchResult.generatedPin || '1234'}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
+                        Keep Safe
+                      </span>
+                    </div>
+
+                    {/* Login Now Button */}
+                    <button
+                      type="button"
+                      id="kyc-login-now-btn"
+                      onClick={() => {
+                        setShowKycStatusModal(false);
+                        setIsRegisterMode(false);
+                        setPhoneNumber(kycSearchResult.phone);
+                        if (kycSearchResult.generatedPin) {
+                          setSecurityPin(kycSearchResult.generatedPin);
+                        }
+                        triggerSound('success');
+                      }}
+                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-2xl text-xs font-black shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <span>Login Now</span>
+                      <ArrowLeft className="w-3.5 h-3.5 rotate-180" />
+                    </button>
+                  </div>
+                ) : (
+                  /* Status: REJECTED */
+                  <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2.5 py-1 rounded-full bg-rose-600 text-white text-[10px] font-black uppercase tracking-wider">
+                        REJECTED
+                      </span>
+                      <span className="text-[10px] font-medium text-rose-800">
+                        {kycSearchResult.vehicleNumber}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-extrabold text-rose-950">
+                        Application Rejected:
+                      </div>
+                      <p className="text-xs text-rose-900 leading-relaxed font-semibold pt-1">
+                        {kycSearchResult.adminNotes || 'Documents or vehicle information did not meet criteria.'}
+                      </p>
+                    </div>
+
+                    {/* Re-apply Button */}
+                    <button
+                      type="button"
+                      id="kyc-reapply-btn"
+                      onClick={() => {
+                        setShowKycStatusModal(false);
+                        setIsRegisterMode(true);
+                        setRegName(kycSearchResult.driverName || '');
+                        setRegPhone(kycSearchResult.phone || '');
+                        setRegVehicleNumber(kycSearchResult.vehicleNumber || '');
+                        triggerSound('beep');
+                      }}
+                      className="w-full py-3 bg-rose-600 hover:bg-rose-700 active:scale-98 text-white rounded-2xl text-xs font-black shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>Re-apply With Updated Documents</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Footer Info */}
       <div className="pt-4 text-center text-[11px] text-neutral-500 font-medium space-y-1.5">

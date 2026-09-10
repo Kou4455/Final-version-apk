@@ -49,6 +49,8 @@ export const AdminDriverManagement: React.FC = () => {
   const [fleetOnlineFilter, setFleetOnlineFilter] = useState<'all' | 'online' | 'offline'>('all');
   const [selectedDriver, setSelectedDriver] = useState<DriverApprovalRequest | null>(null);
   const [driverToDelete, setDriverToDelete] = useState<DriverApprovalRequest | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<DriverApprovalRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>('');
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   // Active Driver Edit Modal
@@ -530,14 +532,24 @@ export const AdminDriverManagement: React.FC = () => {
                 </button>
 
                 {driver.status === 'pending' && (
-                  <button
-                    type="button"
-                    onClick={() => handleApprove(driver)}
-                    className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                  >
-                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                    <span>Approve</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleApprove(driver)}
+                      className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      <span>Approve</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setRejectTarget(driver); setRejectReason(''); triggerSound('alert'); }}
+                      className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5 stroke-[3]" />
+                      <span>Reject</span>
+                    </button>
+                  </>
                 )}
 
                 <button
@@ -939,19 +951,97 @@ export const AdminDriverManagement: React.FC = () => {
                 </button>
 
                 {selectedDriver.status === 'pending' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleApprove(selectedDriver);
-                      setSelectedDriver(null);
-                    }}
-                    className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
-                  >
-                    <Key className="w-3.5 h-3.5 text-amber-200" />
-                    <span>Generate PIN & Approve</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = selectedDriver;
+                        setSelectedDriver(null);
+                        setRejectTarget(target);
+                        setRejectReason('');
+                        triggerSound('alert');
+                      }}
+                      className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-extrabold text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5 stroke-[3]" />
+                      <span>Reject</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleApprove(selectedDriver);
+                        setSelectedDriver(null);
+                      }}
+                      className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                    >
+                      <Key className="w-3.5 h-3.5 text-amber-200" />
+                      <span>Generate PIN & Approve</span>
+                    </button>
+                  </>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Registration Modal with Reason */}
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 shadow-2xl border border-neutral-200 space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 font-bold">
+                  ✕
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#111111]">Reject Captain Application</h3>
+                  <p className="text-[11px] text-neutral-500">{rejectTarget.driverName} · {rejectTarget.phone}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectTarget(null)}
+                className="w-7 h-7 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-600 font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <label className="text-[11px] font-bold text-neutral-600 uppercase">Reason for Rejection (Visible to Captain)</label>
+              <textarea
+                rows={3}
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="e.g. Incomplete RC document or unclear driving license photo..."
+                className="w-full p-3 bg-[#FAF8F5] border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-rose-400"
+              />
+            </div>
+
+            <div className="pt-2 border-t border-neutral-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectTarget(null)}
+                className="py-2.5 px-4 rounded-xl border border-neutral-300 hover:bg-neutral-100 text-neutral-700 font-bold text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await rejectDriverRegistration(rejectTarget.id, rejectReason);
+                    setActionNotice(`Captain "${rejectTarget.driverName}" registration rejected.`);
+                    setRejectTarget(null);
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }}
+                className="py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs flex items-center gap-1 shadow-xs cursor-pointer"
+              >
+                <span>Confirm Rejection</span>
+              </button>
             </div>
           </div>
         </div>

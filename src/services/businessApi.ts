@@ -93,6 +93,12 @@ export async function driverAcceptRideApi(rideId: string, driverId: string) {
   });
 }
 
+export async function expireRideApi(rideId: string) {
+  return request<{ success: boolean; ride: AuthoritativeRide | null; message: string }>(`/api/rides/${rideId}/expire`, {
+    method: 'POST'
+  });
+}
+
 export async function driverArrivedApi(rideId: string, driverId: string, lat?: number, lng?: number) {
   return request<{ success: boolean; ride: AuthoritativeRide; message: string }>(`/api/rides/${rideId}/arrived`, {
     method: 'POST',

@@ -3,12 +3,26 @@ export type AppRole = 'user' | 'driver' | 'admin';
 export type RideStatus = 
   | 'idle'
   | 'searching'
+  | 'SEARCHING_DRIVER'
   | 'driver_assigned'
+  | 'DRIVER_ASSIGNED'
+  | 'driver_accepted'
+  | 'DRIVER_ACCEPTED'
   | 'driver_arriving'
+  | 'DRIVER_ARRIVING'
   | 'driver_arrived'
+  | 'DRIVER_ARRIVED'
   | 'in_progress'
+  | 'RIDE_STARTED'
+  | 'RIDE_IN_PROGRESS'
   | 'completed'
-  | 'cancelled';
+  | 'RIDE_COMPLETED'
+  | 'cancelled'
+  | 'CUSTOMER_CANCELLED'
+  | 'DRIVER_CANCELLED'
+  | 'no_driver_accepted'
+  | 'NO_DRIVER_ACCEPTED'
+  | 'expired';
 
 export interface GeoPoint {
   lat: number;
@@ -188,6 +202,8 @@ export interface ActiveRide {
   status: RideStatus;
   otp: string;
   bookedAt: string;
+  createdAt?: string;
+  expiresAt?: string;
   acceptedAt?: string;
   arrivedAt?: string;
   startedAt?: string;
@@ -525,6 +541,7 @@ export interface AuthoritativeRide {
   vehicleNumber?: string;
   vehicleModel?: string;
   createdAt: string;
+  expiresAt?: string;
   acceptedAt?: string;
   arrivedAt?: string;
   startedAt?: string;

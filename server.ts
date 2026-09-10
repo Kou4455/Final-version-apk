@@ -21,6 +21,7 @@ import {
   getOrCreateVehicle,
   createRideRequestAuthoritative,
   driverAcceptRideAuthoritative,
+  expireRideAuthoritative,
   driverArrivedAuthoritative,
   driverStartRideAuthoritative,
   driverCompleteRideAuthoritative,
@@ -371,6 +372,17 @@ async function startServer() {
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Failed to accept ride." });
+    }
+  });
+
+  // 4b. Expire Ride When No Captain Accepts Within Expiration Window
+  app.post("/api/rides/:id/expire", (req, res) => {
+    try {
+      const rideId = req.params.id;
+      const result = expireRideAuthoritative(rideId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to expire ride." });
     }
   });
 

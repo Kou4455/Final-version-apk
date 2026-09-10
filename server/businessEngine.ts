@@ -20,6 +20,8 @@ export type StrictRideStatus =
   | 'CUSTOMER_CANCELLED'
   | 'DRIVER_CANCELLED'
   | 'NO_DRIVER_FOUND'
+  | 'NO_DRIVER_ACCEPTED'
+  | 'EXPIRED'
   | 'ADMIN_CANCELLED'
   | 'PAYMENT_FAILED';
 
@@ -117,6 +119,7 @@ export interface AuthoritativeRide {
   paymentStatus: 'pending' | 'processing' | 'paid' | 'failed' | 'refunded';
   otp: string;
   createdAt: string;
+  expiresAt?: string;
   acceptedAt?: string;
   arrivedAt?: string;
   startedAt?: string;
@@ -801,13 +804,10 @@ export function createRideRequestAuthoritative(payload: {
     }
   }
 
-  if (!targetDriver) {
-    const matched = findEligibleDrivers(payload.pickup.lat, payload.pickup.lng, payload.vehicleType);
-    if (matched.length > 0) {
-      targetDriver = matched[0].driver;
-      initialStatus = 'DRIVER_ASSIGNED';
-    }
-  }
+  const now = new Date();
+  const createdAtIso = now.toISOString();
+  // 45 seconds server-authoritative countdown timer for Captain acceptance
+  const expiresAtIso = new Date(now.getTime() + 45 * 1000).toISOString();
 
   const ride: AuthoritativeRide = {
     id: rideId,
@@ -839,7 +839,8 @@ export function createRideRequestAuthoritative(payload: {
     paymentMethod: payload.paymentMethod,
     paymentStatus: 'pending',
     otp,
-    createdAt: new Date().toISOString(),
+    createdAt: createdAtIso,
+    expiresAt: expiresAtIso,
     promoCode: payload.promoCode
   };
 
@@ -863,13 +864,27 @@ export function driverAcceptRideAuthoritative(rideId: string, driverId: string):
     return { success: false, ride: null as any, message: 'Ride not found.' };
   }
 
-  // ATOMIC LOCK: Only accept if currently searching or assigned to this driver
-  if (ride.status !== 'SEARCHING_DRIVER' && ride.status !== 'DRIVER_ASSIGNED') {
-    return { success: false, ride, message: `Ride cannot be accepted. Current state is ${ride.status}` };
+  // Check if expired
+  if (ride.expiresAt && new Date(ride.expiresAt).getTime() < Date.now()) {
+    ride.status = 'NO_DRIVER_ACCEPTED';
+    persistState();
+    return { success: false, ride, message: 'This ride request has expired.' };
+  }
+
+  // ATOMIC LOCK: Only accept if currently searching or assigned to this specific driver
+  const isSearchState = ride.status === 'SEARCHING_DRIVER' || ride.status === 'DRIVER_ASSIGNED' || (ride.status as any) === 'searching';
+  if (!isSearchState) {
+    return { 
+      success: false, 
+      ride, 
+      message: (ride.driverId && ride.driverId !== driverId)
+        ? 'Ride already accepted by another Captain.'
+        : `Ride cannot be accepted. Current state is ${ride.status}` 
+    };
   }
 
   if (ride.driverId && ride.driverId !== driverId) {
-    return { success: false, ride, message: 'Ride has already been claimed by another driver.' };
+    return { success: false, ride, message: 'Ride already accepted by another Captain.' };
   }
 
   const driver = state.drivers[driverId];
@@ -894,6 +909,17 @@ export function driverAcceptRideAuthoritative(rideId: string, driverId: string):
 
   persistState();
   return { success: true, ride, message: 'Ride successfully accepted by driver.' };
+}
+
+export function expireRideAuthoritative(rideId: string): { success: boolean; ride: AuthoritativeRide | null; message: string } {
+  const ride = state.rides[rideId];
+  if (!ride) return { success: false, ride: null, message: 'Ride not found.' };
+  if (ride.status === 'SEARCHING_DRIVER' || ride.status === 'DRIVER_ASSIGNED' || (ride.status as any) === 'searching') {
+    ride.status = 'NO_DRIVER_ACCEPTED';
+    persistState();
+    return { success: true, ride, message: 'Ride marked as NO_DRIVER_ACCEPTED.' };
+  }
+  return { success: false, ride, message: `Ride cannot be expired because status is ${ride.status}` };
 }
 
 export function driverArrivedAuthoritative(rideId: string, driverId: string, driverLat?: number, driverLng?: number): { success: boolean; ride: AuthoritativeRide; message: string } {

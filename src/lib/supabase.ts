@@ -84,25 +84,41 @@ export type TableName =
 
 type TableListener<T = any> = (records: T[]) => void;
 const listeners = new Map<TableName, Set<TableListener>>();
+// High-performance in-memory cache to prevent repetitive JSON serialization/deserialization lag
+const memoryCache = new Map<TableName, Record<string, any>>();
 
 function getStorageKey(table: TableName): string {
   return `toto_${table}`;
 }
 
 function loadFromStorage<T = any>(table: TableName): Record<string, T> {
+  if (memoryCache.has(table)) {
+    return memoryCache.get(table) as Record<string, T>;
+  }
   try {
-    const raw = localStorage.getItem(getStorageKey(table));
-    if (!raw) return {};
-    return JSON.parse(raw);
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(getStorageKey(table)) : null;
+    if (!raw) {
+      const initial: Record<string, T> = {};
+      memoryCache.set(table, initial);
+      return initial;
+    }
+    const parsed = JSON.parse(raw);
+    memoryCache.set(table, parsed);
+    return parsed;
   } catch (err) {
     console.warn(`Failed to read table ${table} from storage:`, err);
-    return {};
+    const fallback: Record<string, T> = {};
+    memoryCache.set(table, fallback);
+    return fallback;
   }
 }
 
 function saveToStorage<T = any>(table: TableName, data: Record<string, T>): void {
+  memoryCache.set(table, data);
   try {
-    localStorage.setItem(getStorageKey(table), JSON.stringify(data));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(getStorageKey(table), JSON.stringify(data));
+    }
   } catch (err) {
     console.warn(`Failed to write table ${table} to storage:`, err);
   }
@@ -149,6 +165,21 @@ export const appDb = {
         console.debug(`Supabase upsert to ${table} deferred:`, err);
       });
     }
+  },
+
+  /**
+   * High-performance batch upsert that writes once and notifies once
+   */
+  setBatch<T extends { id?: string }>(table: TableName, items: T[]): void {
+    if (!items || items.length === 0) return;
+    const data = loadFromStorage<T>(table);
+    for (const item of items) {
+      if (item && item.id) {
+        data[item.id] = { ...item };
+      }
+    }
+    saveToStorage(table, data);
+    notifyListeners(table);
   },
 
   update<T = any>(table: TableName, id: string, updates: Partial<T>): T | null {
