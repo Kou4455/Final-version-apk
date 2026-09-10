@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useRide } from '../../context/RideContext';
 import { AppLogo } from './AppLogo';
 import { Zap } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
+import { usePWAInstall } from '../../hooks/usePWAInstall';
 
 export const Header: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -17,6 +19,9 @@ export const Header: React.FC = () => {
     activeNavTab,
     setActiveNavTab
   } = useRide();
+
+  // Detect if customer app is installed as a standalone PWA
+  const { isInstalled: isPWAInstalled } = usePWAInstall('user');
 
   // Track page scrolling system for fixed header feedback & progress
   React.useEffect(() => {
@@ -41,7 +46,7 @@ export const Header: React.FC = () => {
   // Automatically logout driver or captains whenever returning to the users login page
   React.useEffect(() => {
     if (activeRole === 'user' && !user && driver) {
-      logoutDriver();
+      logoutDriver('user');
     }
   }, [activeRole, user, driver, logoutDriver]);
 
@@ -78,10 +83,17 @@ export const Header: React.FC = () => {
           className="flex items-center gap-2 sm:gap-2.5 cursor-pointer group shrink-0"
           title="Toto Drive Home (Click to navigate home & scroll to top)"
         >
-          <AppLogo size="sm" />
+          <AppLogo 
+            size="sm" 
+            iconStyle={{ width: '45px', height: '45px' }}
+            iconClassName="!w-[45px] !h-[45px]"
+          />
           <div>
             <div className="flex items-center gap-1 sm:gap-1.5">
-              <span className="font-black text-sm sm:text-base tracking-tight text-[#111111]">
+              <span 
+                style={{ fontSize: '16px' }}
+                className="font-black text-[16px] tracking-tight text-[#111111]"
+              >
                 Toto<span className="text-[#E07A00]">Drive</span>
               </span>
               <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full hidden xs:inline-block ${
@@ -113,8 +125,14 @@ export const Header: React.FC = () => {
 
         {/* Middle & Right: Actions & Profile */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Captain button on right side top corner - visible only when passenger is not logged in */}
-          {activeRole === 'user' && !user && (
+          {/* Dynamic PWA Install Button for active role */}
+          <PWAInstallButton 
+            role={activeRole === 'driver' ? 'driver' : 'user'} 
+            variant="header" 
+          />
+
+          {/* Captain button on right side top corner - visible only when passenger is not logged in AND PWA is not installed */}
+          {activeRole === 'user' && !user && !isPWAInstalled && (
             <button
               id="header-captain-btn"
               type="button"
@@ -124,7 +142,7 @@ export const Header: React.FC = () => {
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               className="px-3.5 py-1.5 sm:py-2 rounded-xl transition-all duration-150 cursor-pointer flex items-center gap-1.5 bg-[#181818] hover:bg-black active:scale-[0.96] text-white text-xs font-bold shadow-xs border border-neutral-800 hover:border-neutral-700 select-none shrink-0"
-              title="Switch to Captain / Driver Portal"
+              title="Become a Captain / Driver Portal"
             >
               <Zap className="w-3.5 h-3.5 text-[#FFB703] fill-[#FFB703]" />
               <div className="flex flex-col text-left leading-tight">

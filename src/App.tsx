@@ -43,7 +43,7 @@ const MainAppContent: React.FC = () => {
   const isUserHomeMap = activeRole === 'user' && !!user && activeNavTab === 'home';
 
   return (
-    <div className={`min-h-screen bg-[#FAF8F5] text-[#111111] flex flex-col font-sans selection:bg-[#FDE8DC] selection:text-[#C8622A] ${
+    <div className={`min-h-screen min-h-[100dvh] w-full bg-[#FAF8F5] text-[#111111] flex flex-col font-sans selection:bg-[#FDE8DC] selection:text-[#C8622A] overflow-x-hidden ${
       isUserHomeMap
         ? 'pt-0'
         : 'pt-[calc(56px+env(safe-area-inset-top,0px))] sm:pt-[calc(64px+env(safe-area-inset-top,0px))]'
@@ -65,7 +65,7 @@ const MainAppContent: React.FC = () => {
                 <UserDashboard />
               </div>
             ) : (
-              <div className="w-full flex-1 flex flex-col items-center justify-center px-2 py-4 sm:py-6">
+              <div className="w-full flex-1 flex flex-col items-center justify-center px-2 py-4 sm:py-6 bg-white">
                 <UserLogin />
               </div>
             )}

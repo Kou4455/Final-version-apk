@@ -15,6 +15,7 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { fetchAdminStatus } from '../../services/adminAuthService';
+import { updateActiveManifestForRole } from '../../hooks/usePWAInstall';
 
 interface AdminLoginProps {
   onLoginSuccess?: () => void;
@@ -47,6 +48,11 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess, onBack }
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [showRecoveryInfo, setShowRecoveryInfo] = useState(false);
+
+  // Set active PWA manifest to Admin role on mount
+  useEffect(() => {
+    updateActiveManifestForRole('admin');
+  }, []);
 
   // Check admin status on mount
   useEffect(() => {

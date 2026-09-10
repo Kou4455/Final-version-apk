@@ -1,17 +1,21 @@
 import React, { useState } from 'react';
-import { Download, Share, PlusSquare, X, CheckCircle2, Smartphone } from 'lucide-react';
-import { usePWAInstall } from '../../hooks/usePWAInstall';
+import { Download, Share, PlusSquare, X, CheckCircle2, Smartphone, ShieldCheck, Zap } from 'lucide-react';
+import { usePWAInstall, PWARole } from '../../hooks/usePWAInstall';
 
 interface PWAInstallButtonProps {
-  variant?: 'header' | 'banner' | 'compact';
+  role?: PWARole;
+  variant?: 'header' | 'banner' | 'card' | 'compact';
   className?: string;
+  onInstalled?: () => void;
 }
 
 export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
+  role = 'user',
   variant = 'header',
   className = '',
+  onInstalled
 }) => {
-  const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
+  const { isInstallable, isInstalled, isIOS, install, config } = usePWAInstall(role);
   const [showIOSGuide, setShowIOSGuide] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installedSuccess, setInstalledSuccess] = useState(false);
@@ -28,35 +32,74 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
       setInstalling(false);
       if (success) {
         setInstalledSuccess(true);
+        if (onInstalled) onInstalled();
         setTimeout(() => setInstalledSuccess(false), 4000);
       }
     } else if (isIOS) {
       setShowIOSGuide(true);
+    } else {
+      // In browsers without native prompt, guide the user to Chrome menu / Add to Home Screen
+      setShowIOSGuide(true);
     }
   };
 
-  // If not installable and not iOS (e.g. unsupported browser or already handled), return null
-  if (!isInstallable && !isIOS && !installedSuccess) {
-    return null;
-  }
+  const getRoleLabel = () => {
+    switch (role) {
+      case 'driver':
+        return {
+          shortTitle: 'Captain App',
+          fullTitle: 'Install Toto Captain App',
+          subtitle: 'Instant ride alerts, offline navigation & earnings tracker on your home screen',
+          buttonText: 'Install App',
+          badgeText: 'Driver Partner PWA',
+          colorScheme: 'from-emerald-500 via-teal-500 to-emerald-600',
+          btnBg: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+          headerBg: 'bg-emerald-500 hover:bg-emerald-400 text-neutral-900 border-emerald-600/30'
+        };
+      case 'admin':
+        return {
+          shortTitle: 'Admin App',
+          fullTitle: 'Install Admin Control Center',
+          subtitle: 'Fleet dispatch, KYC approvals & dynamic pricing right from your desktop or phone',
+          buttonText: 'Install Admin App',
+          badgeText: 'Operations PWA',
+          colorScheme: 'from-amber-600 via-orange-600 to-amber-700',
+          btnBg: 'bg-neutral-900 hover:bg-neutral-800 text-amber-300',
+          headerBg: 'bg-amber-600 hover:bg-amber-500 text-white border-amber-700/40'
+        };
+      default:
+        return {
+          shortTitle: 'Install App',
+          fullTitle: 'Install Toto Drive Customer App',
+          subtitle: 'Fast booking, live radar & instant dispatch right on your home screen',
+          buttonText: 'Install App',
+          badgeText: 'Instant Booking',
+          colorScheme: 'from-amber-500 via-yellow-400 to-amber-500',
+          btnBg: 'bg-neutral-900 hover:bg-neutral-800 text-amber-300',
+          headerBg: 'bg-amber-400 hover:bg-amber-300 text-neutral-900 border-amber-500/30'
+        };
+    }
+  };
+
+  const roleMeta = getRoleLabel();
 
   return (
     <>
       {installedSuccess && (
         <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl animate-fade-in shadow-xs">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-          <span>App Installed!</span>
+          <span>{roleMeta.shortTitle} Installed!</span>
         </div>
       )}
 
       {!installedSuccess && variant === 'header' && (
         <button
-          id="pwa-header-install-btn"
+          id={`pwa-header-install-btn-${role}`}
           type="button"
           onClick={handleInstallClick}
           disabled={installing}
-          title={isIOS ? 'Install Toto Drive on iOS' : 'Install Toto Drive App'}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-bold text-xs bg-amber-400 hover:bg-amber-300 text-neutral-900 border border-amber-500/30 shadow-xs hover:shadow-sm active:scale-95 transition-all duration-150 cursor-pointer ${className}`}
+          title={`Install ${config.name}`}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl font-bold text-xs shadow-xs hover:shadow-sm active:scale-95 transition-all duration-150 cursor-pointer border ${roleMeta.headerBg} ${className}`}
         >
           <img
             src="/app-logo.jpeg"
@@ -67,15 +110,28 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             }}
           />
           <Download className="w-3.5 h-3.5 stroke-[2.5]" />
-          <span className="hidden sm:inline">Install App</span>
+          <span className="hidden sm:inline">{roleMeta.shortTitle}</span>
           <span className="sm:hidden">Install</span>
+        </button>
+      )}
+
+      {!installedSuccess && variant === 'compact' && (
+        <button
+          id={`pwa-compact-install-btn-${role}`}
+          type="button"
+          onClick={handleInstallClick}
+          disabled={installing}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-neutral-900 text-amber-300 hover:bg-neutral-800 border border-neutral-800 shadow-xs active:scale-95 transition-all cursor-pointer ${className}`}
+        >
+          <Download className="w-3.5 h-3.5" />
+          <span>{roleMeta.buttonText}</span>
         </button>
       )}
 
       {!installedSuccess && variant === 'banner' && (
         <div
-          id="pwa-install-banner"
-          className={`w-full bg-linear-to-r from-amber-500 via-yellow-400 to-amber-500 p-3 rounded-2xl text-neutral-900 shadow-md flex items-center justify-between gap-3 border border-amber-300 ${className}`}
+          id={`pwa-install-banner-${role}`}
+          className={`w-full bg-gradient-to-r ${roleMeta.colorScheme} p-3 sm:p-3.5 rounded-2xl text-white shadow-md flex items-center justify-between gap-3 border border-white/20 ${className}`}
         >
           <div className="flex items-center gap-3 min-w-0">
             <img
@@ -86,12 +142,17 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 (e.currentTarget as HTMLImageElement).src = '/pwa-192x192.png';
               }}
             />
-            <div className="min-w-0">
-              <h4 className="text-xs font-black tracking-tight text-neutral-900 truncate">
-                Install Toto Drive
-              </h4>
-              <p className="text-[11px] font-medium text-neutral-800 line-clamp-1">
-                Fast booking, live radar & instant dispatch on your home screen
+            <div className="min-w-0 text-left">
+              <div className="flex items-center gap-1.5">
+                <h4 className="text-xs sm:text-sm font-black tracking-tight text-white truncate">
+                  {roleMeta.fullTitle}
+                </h4>
+                <span className="hidden sm:inline-block px-1.5 py-0.5 rounded-md bg-white/20 text-[10px] font-bold text-white tracking-wide uppercase">
+                  {roleMeta.badgeText}
+                </span>
+              </div>
+              <p className="text-[11px] font-medium text-white/90 line-clamp-1">
+                {roleMeta.subtitle}
               </p>
             </div>
           </div>
@@ -99,7 +160,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             type="button"
             onClick={handleInstallClick}
             disabled={installing}
-            className="shrink-0 px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-amber-300 rounded-xl text-xs font-bold shadow-xs active:scale-95 transition-transform flex items-center gap-1.5 cursor-pointer"
+            className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs active:scale-95 transition-transform flex items-center gap-1.5 cursor-pointer ${roleMeta.btnBg}`}
           >
             <Download className="w-3.5 h-3.5" />
             <span>Install</span>
@@ -107,7 +168,48 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         </div>
       )}
 
-      {/* iOS Safari Installation Guide Modal */}
+      {!installedSuccess && variant === 'card' && (
+        <div
+          id={`pwa-install-card-${role}`}
+          className={`w-full p-4 rounded-2xl bg-white border border-neutral-200/90 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 ${className}`}
+        >
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+              {role === 'driver' ? (
+                <Zap className="w-5 h-5 text-emerald-600" />
+              ) : role === 'admin' ? (
+                <ShieldCheck className="w-5 h-5 text-amber-600" />
+              ) : (
+                <Smartphone className="w-5 h-5 text-amber-600" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-xs sm:text-sm font-black text-neutral-900">
+                  {roleMeta.fullTitle}
+                </h4>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-neutral-100 text-neutral-700">
+                  PWA
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-500 font-medium">
+                {roleMeta.subtitle}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleInstallClick}
+            disabled={installing}
+            className={`self-stretch sm:self-auto px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs active:scale-95 transition-transform flex items-center justify-center gap-1.5 cursor-pointer ${roleMeta.btnBg}`}
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>{roleMeta.buttonText}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Safari / Browser Installation Guide Modal */}
       {showIOSGuide && (
         <div className="fixed inset-0 z-100 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
           <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl border border-neutral-200 text-neutral-900 relative animate-scale-up">
@@ -130,8 +232,10 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 }}
               />
               <div>
-                <h3 className="font-extrabold text-base text-neutral-900">Install Toto Drive</h3>
-                <p className="text-xs font-medium text-neutral-500">iPhone / iPad Safari</p>
+                <h3 className="font-extrabold text-base text-neutral-900">{roleMeta.fullTitle}</h3>
+                <p className="text-xs font-medium text-neutral-500">
+                  {isIOS ? 'iPhone / iPad Safari' : 'Chrome / Edge Browser'}
+                </p>
               </div>
             </div>
 
@@ -142,7 +246,11 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 </div>
                 <div>
                   <span className="font-bold text-neutral-900">Step 1: </span>
-                  Tap the <strong className="text-neutral-900">Share</strong> icon in the bottom Safari toolbar.
+                  {isIOS ? (
+                    <>Tap the <strong className="text-neutral-900">Share</strong> icon in the bottom Safari toolbar.</>
+                  ) : (
+                    <>Click the <strong className="text-neutral-900">Install</strong> icon in the browser address bar or open the 3-dot menu.</>
+                  )}
                 </div>
               </div>
 
@@ -152,7 +260,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 </div>
                 <div>
                   <span className="font-bold text-neutral-900">Step 2: </span>
-                  Scroll down the share sheet and tap <strong className="text-neutral-900">"Add to Home Screen"</strong>.
+                  Select <strong className="text-neutral-900">"Add to Home Screen"</strong> or <strong className="text-neutral-900">"Install Toto Drive"</strong>.
                 </div>
               </div>
 
@@ -162,7 +270,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 </div>
                 <div>
                   <span className="font-bold text-neutral-900">Step 3: </span>
-                  Tap <strong className="text-neutral-900">"Add"</strong> in the top right corner to launch Toto Drive like a native app.
+                  Confirm to launch the app directly in fullscreen standalone mode.
                 </div>
               </div>
             </div>

@@ -3,114 +3,72 @@
   <head>
     <meta charset="UTF-8" />
     <script>
-      // Suppress benign [vite] HMR websocket connection failures in containerized sandbox
+      // Initialize React refresh preamble synchronously
+      window.$RefreshReg$ = window.$RefreshReg$ || function() {};
+      window.$RefreshSig$ = window.$RefreshSig$ || function() { return function(type) { return type; }; };
+      window.__vite_plugin_react_preamble_installed__ = true;
+
+      // Suppress benign [vite] HMR messages in containerized sandbox
       (function() {
         if (typeof window === 'undefined') return;
 
-        // 1. Intercept console errors/warnings mentioning [vite]
-        var _origErr = console.error;
-        console.error = function() {
-          for (var i = 0; i < arguments.length; i++) {
-            var arg = arguments[i];
-            var str = typeof arg === 'string' ? arg : (arg && arg.message ? arg.message : '');
-            if (str && (str.indexOf('[vite]') !== -1 || (str.indexOf('vite') !== -1 && str.indexOf('websocket') !== -1))) {
-              return;
+        var isViteMsg = function(args) {
+          for (var i = 0; i < args.length; i++) {
+            var arg = args[i];
+            var str = typeof arg === 'string'
+              ? arg
+              : (arg && (arg.message || arg.stack) ? (String(arg.message) + ' ' + String(arg.stack || '')) : (arg ? String(arg) : ''));
+            if (str && (
+              str.indexOf('[vite]') !== -1 ||
+              str.indexOf('vite-hmr') !== -1 ||
+              str.indexOf('preamble') !== -1 ||
+              (str.indexOf('vite') !== -1 && str.indexOf('websocket') !== -1)
+            )) {
+              return true;
             }
           }
-          return _origErr.apply(console, arguments);
+          return false;
         };
 
-        var _origWarn = console.warn;
-        console.warn = function() {
-          for (var i = 0; i < arguments.length; i++) {
-            var arg = arguments[i];
-            var str = typeof arg === 'string' ? arg : (arg && arg.message ? arg.message : '');
-            if (str && (str.indexOf('[vite]') !== -1 || (str.indexOf('vite') !== -1 && str.indexOf('websocket') !== -1))) {
-              return;
-            }
+        // 1. Intercept all console methods
+        ['error', 'warn', 'info', 'debug', 'log'].forEach(function(method) {
+          var orig = console[method];
+          if (typeof orig === 'function') {
+            console[method] = function() {
+              if (isViteMsg(arguments)) return;
+              return orig.apply(console, arguments);
+            };
           }
-          return _origWarn.apply(console, arguments);
-        };
+        });
 
-        // 2. Prevent unhandled rejections from Vite HMR websocket failures
+        // 2. Prevent unhandled rejections from Vite HMR websocket failures or preamble
         window.addEventListener('unhandledrejection', function(event) {
-          var str = String(event.reason && (event.reason.message || event.reason) || '');
-          if (str.indexOf('WebSocket') !== -1 || str.indexOf('vite') !== -1) {
+          var str = String((event.reason && (event.reason.message || event.reason.stack || event.reason)) || '');
+          if (str.indexOf('WebSocket') !== -1 || str.indexOf('vite') !== -1 || str.indexOf('preamble') !== -1) {
             event.preventDefault();
             if (event.stopImmediatePropagation) event.stopImmediatePropagation();
           }
         }, true);
 
-        // 3. Prevent window error events from Vite HMR
+        // 3. Prevent window error events from Vite HMR or preamble
         window.addEventListener('error', function(event) {
-          var str = String(event.message || '');
-          if (str.indexOf('[vite]') !== -1 || str.indexOf('vite-hmr') !== -1) {
+          var str = String((event.message || '') + ' ' + ((event.error && (event.error.message || event.error.stack)) || ''));
+          if (str.indexOf('[vite]') !== -1 || str.indexOf('vite-hmr') !== -1 || str.indexOf('preamble') !== -1 || str.indexOf('WebSocket') !== -1) {
             event.preventDefault();
             if (event.stopImmediatePropagation) event.stopImmediatePropagation();
           }
         }, true);
-
-        // 4. Safely satisfy Vite HMR client WebSockets without network attempts
-        if (typeof window.WebSocket !== 'undefined') {
-          var RealWebSocket = window.WebSocket;
-          window.WebSocket = function(url, protocols) {
-            var isVite = protocols === 'vite-hmr' || protocols === 'vite-ping' ||
-              (Array.isArray(protocols) && (protocols.indexOf('vite-hmr') !== -1 || protocols.indexOf('vite-ping') !== -1)) ||
-              (typeof url === 'string' && (url.indexOf('24678') !== -1 || url.indexOf('token=') !== -1));
-
-            if (isVite) {
-              var listeners = {};
-              var dummyWs = {
-                OPEN: 1,
-                CONNECTING: 0,
-                CLOSING: 2,
-                CLOSED: 3,
-                readyState: 1,
-                url: url,
-                protocol: Array.isArray(protocols) ? protocols[0] : (protocols || ''),
-                send: function() {},
-                close: function() {},
-                addEventListener: function(event, handler) {
-                  if (!listeners[event]) listeners[event] = [];
-                  listeners[event].push(handler);
-                  if (event === 'open') {
-                    setTimeout(function() {
-                      try { handler({ type: 'open', target: dummyWs }); } catch(e) {}
-                    }, 0);
-                  }
-                },
-                removeEventListener: function(event, handler) {
-                  if (listeners[event]) {
-                    listeners[event] = listeners[event].filter(function(h) { return h !== handler; });
-                  }
-                },
-                onopen: null,
-                onclose: null,
-                onerror: null,
-                onmessage: null
-              };
-              setTimeout(function() {
-                if (typeof dummyWs.onopen === 'function') {
-                  try { dummyWs.onopen({ type: 'open', target: dummyWs }); } catch(e) {}
-                }
-              }, 0);
-              return dummyWs;
-            }
-            return new RealWebSocket(url, protocols);
-          };
-          window.WebSocket.prototype = RealWebSocket.prototype;
-          window.WebSocket.CONNECTING = 0;
-          window.WebSocket.OPEN = 1;
-          window.WebSocket.CLOSING = 2;
-          window.WebSocket.CLOSED = 3;
-        }
       })();
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="theme-color" content="#FAF8F5" />
+    <meta name="theme-color" content="#FAF8F5" id="meta-theme-color" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link id="app-manifest" rel="manifest" href="/manifest-customer.webmanifest" />
     <title>Toto Drive</title>
     <meta name="description" content="Toto Drive - Eco-friendly e-rickshaw ride-hailing platform featuring user and driver login portals, interactive live maps, ride booking, fare calculator, and partner dispatch management." />
     <meta property="og:title" content="Toto Drive" />

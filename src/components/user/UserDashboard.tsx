@@ -841,7 +841,7 @@ export const UserDashboard: React.FC = () => {
             }}
             onCenterGps={refreshCurrentLocation}
             edgeToEdgeTop={true}
-            heightClass={dropoff ? "h-[200px] xs:h-[220px] sm:h-[280px] md:h-[340px]" : "h-[280px] xs:h-[300px] sm:h-[340px] md:h-[380px]"}
+            heightClass="h-[340px] xs:h-[360px] sm:h-[400px] md:h-[430px]"
           >
             {/* Map overlays when dropoff is selected */}
             {dropoff && (
@@ -853,7 +853,7 @@ export const UserDashboard: React.FC = () => {
                     setDropoff(null);
                     triggerSound('beep');
                   }}
-                  className="absolute top-3 left-3 z-20 w-10 h-10 rounded-full bg-white text-gray-800 shadow-md border border-[#E5DFD4] flex items-center justify-center hover:bg-gray-100 active:scale-95 transition-all cursor-pointer"
+                  className="absolute top-[calc(64px+env(safe-area-inset-top,0px))] left-3 sm:top-[calc(72px+env(safe-area-inset-top,0px))] z-20 w-10 h-10 rounded-full bg-white text-gray-800 shadow-md border border-[#E5DFD4] flex items-center justify-center hover:bg-gray-100 active:scale-95 transition-all cursor-pointer"
                   title="Clear destination and return to search"
                 >
                   <ArrowLeft className="w-5 h-5 text-[#181818]" />
@@ -865,7 +865,7 @@ export const UserDashboard: React.FC = () => {
                     triggerSound('beep');
                     setIsFullScreenSearchOpen(true);
                   }}
-                  className="absolute top-3 left-16 right-3 sm:right-auto sm:max-w-xs z-20 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-full border border-[#E5DFD4] shadow-md flex items-center justify-between gap-2 cursor-pointer hover:bg-white transition-colors select-none"
+                  className="absolute top-[calc(64px+env(safe-area-inset-top,0px))] left-16 right-3 sm:right-auto sm:max-w-xs sm:top-[calc(72px+env(safe-area-inset-top,0px))] z-20 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-full border border-[#E5DFD4] shadow-md flex items-center justify-between gap-2 cursor-pointer hover:bg-white transition-colors select-none"
                   title="Tap to change destination"
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -918,10 +918,16 @@ export const UserDashboard: React.FC = () => {
             {(!activeRide || activeRide.status === 'cancelled' || activeRide.status === 'idle') && (
             <div 
               id="route-booking-card"
-              className="w-full bg-white rounded-none sm:rounded-b-2xl sm:rounded-t-none p-4 sm:p-5 pb-8 sm:pb-8 shadow-xs border-t border-[#EDE8E0] sm:border-x sm:border-b sm:border-[#EDE8E0] space-y-4 max-h-[calc(100dvh-175px)] sm:max-h-[calc(100dvh-230px)] min-h-[280px] overflow-y-auto overflow-x-hidden scroll-smooth touch-pan-y [overscroll-behavior-y:contain] [-webkit-overflow-scrolling:touch] [scrollbar-width:thin] [scrollbar-color:#D6D1C7_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#D6D1C7] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#B8B2A6]"
+              className="w-full bg-white rounded-t-[32px] sm:rounded-3xl p-4 sm:p-5 pb-24 sm:pb-20 shadow-[0_-6px_25px_rgba(0,0,0,0.06)] border-t border-[#EDE8E0] sm:border space-y-4"
             >
-              {/* Centered Drag Handle */}
-              <div className="w-10 h-1 rounded-full bg-[#D6D1C7] mx-auto shrink-0 mb-1" />
+              {/* Centered Drag Handle with smooth scroll support */}
+              <div 
+                onClick={() => {
+                  document.getElementById('route-booking-card')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="w-12 h-1.5 rounded-full bg-[#D6D1C7] hover:bg-neutral-400 mx-auto shrink-0 mb-2 mt-0.5 cursor-pointer transition-colors"
+                title="Scroll down to options"
+              />
 
               {!dropoff ? (
                 /* STEP 1: Destination Search & Explore Options (Matching after login .jpeg & design.jpeg) */

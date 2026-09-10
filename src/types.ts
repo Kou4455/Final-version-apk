@@ -110,6 +110,7 @@ export interface DriverApprovalRequest {
   generatedPin?: string;
   createdAt: string;
   approvedAt?: string;
+  updatedAt?: string;
   adminNotes?: string;
 }
 
@@ -352,3 +353,190 @@ export interface RideEventLog {
   actor: string;
   details?: string;
 }
+
+export type StrictRideStatus =
+  | 'SEARCHING_DRIVER'
+  | 'DRIVER_ASSIGNED'
+  | 'DRIVER_ACCEPTED'
+  | 'DRIVER_ARRIVING'
+  | 'DRIVER_ARRIVED'
+  | 'RIDE_STARTED'
+  | 'RIDE_IN_PROGRESS'
+  | 'RIDE_COMPLETED'
+  | 'PAYMENT_PENDING'
+  | 'PAYMENT_COMPLETED'
+  | 'CLOSED'
+  | 'CUSTOMER_CANCELLED'
+  | 'DRIVER_CANCELLED'
+  | 'NO_DRIVER_FOUND'
+  | 'ADMIN_CANCELLED'
+  | 'PAYMENT_FAILED';
+
+export type DriverStatus = 
+  | 'OFFLINE'
+  | 'ONLINE'
+  | 'SEARCHING'
+  | 'RIDE_ASSIGNED'
+  | 'ACCEPTED'
+  | 'GOING_TO_PICKUP'
+  | 'ARRIVED'
+  | 'RIDE_STARTED'
+  | 'RIDE_IN_PROGRESS'
+  | 'COMPLETING'
+  | 'RIDE_COMPLETED'
+  | 'SUSPENDED';
+
+export type VehicleStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'SUSPENDED';
+
+export interface Vehicle {
+  vehicle_id: string;
+  driver_id: string;
+  vehicle_type: 'toto' | 'toto_express' | 'toto_deluxe' | 'full_reserve_toto' | 'bike' | 'auto';
+  registration_number: string;
+  vehicle_model: string;
+  vehicle_color: string;
+  capacity: number;
+  verification_status: VehicleStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type LedgerTransactionType = 
+  | 'RIDE_EARNING' 
+  | 'COMMISSION' 
+  | 'INCENTIVE' 
+  | 'REFUND_ADJUSTMENT' 
+  | 'WITHDRAWAL';
+
+export interface DriverLedgerEntry {
+  id: string;
+  driverId: string;
+  rideId?: string;
+  type: LedgerTransactionType;
+  amount: number;
+  balanceAfter: number;
+  description: string;
+  timestamp: string;
+  status: 'COMPLETED' | 'PENDING' | 'FAILED';
+}
+
+export interface ServiceArea {
+  id: string;
+  name: string;
+  city: string;
+  centerLat: number;
+  centerLng: number;
+  radiusKm: number;
+  isActive: boolean;
+  description?: string;
+}
+
+export interface RatingRecord {
+  id: string;
+  rideId: string;
+  fromUserId: string;
+  toUserId: string;
+  fromRole: 'customer' | 'driver';
+  toRole: 'customer' | 'driver';
+  rating: number; // 1-5
+  comment?: string;
+  createdAt: string;
+}
+
+export interface RideInvoice {
+  invoiceNumber: string;
+  rideId: string;
+  dateTime: string;
+  customerName: string;
+  customerPhone: string;
+  driverName: string;
+  driverPhone: string;
+  vehicleNumber: string;
+  vehicleModel: string;
+  vehicleType: string;
+  pickupAddress: string;
+  dropoffAddress: string;
+  distanceKm: number;
+  durationMins: number;
+  baseFare: number;
+  distanceFare: number;
+  timeFare: number;
+  waitingCharge: number;
+  bookingFee: number;
+  tax: number;
+  discount: number;
+  finalFare: number;
+  platformCommission: number;
+  driverEarnings: number;
+  paymentMethod: 'cash' | 'upi' | 'wallet';
+  paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded';
+}
+
+export interface TotoVehiclePricing {
+  serviceType: 'toto' | 'toto_express' | 'toto_deluxe' | 'full_reserve_toto' | 'bike' | 'auto';
+  name: string;
+  baseFare: number;
+  minimumFare: number;
+  perKmRate: number;
+  perMinuteRate: number;
+  waitingRatePerMin: number;
+  commissionPct: number;
+  capacity: number;
+  bookingFee: number;
+}
+
+export interface AuthoritativeRide {
+  id: string;
+  userId: string;
+  userName: string;
+  userPhone: string;
+  vehicleType: string;
+  pickup: {
+    lat: number;
+    lng: number;
+    address?: string;
+    name?: string;
+  };
+  dropoff: {
+    lat: number;
+    lng: number;
+    address?: string;
+    name?: string;
+  };
+  distanceKm: number;
+  estimatedDurationMins: number;
+  baseFare: number;
+  distanceFare: number;
+  timeFare: number;
+  waitingCharge: number;
+  bookingFee: number;
+  tax: number;
+  discount: number;
+  finalFare: number;
+  platformCommission: number;
+  driverEarnings: number;
+  paymentMethod: 'cash' | 'upi' | 'wallet';
+  paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded';
+  status: StrictRideStatus;
+  otp: string;
+  driverId?: string | null;
+  driverName?: string;
+  driverPhone?: string;
+  vehicleNumber?: string;
+  vehicleModel?: string;
+  createdAt: string;
+  acceptedAt?: string;
+  arrivedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
+  cancelledBy?: 'customer' | 'driver' | 'admin' | 'system';
+  driverLocation?: {
+    lat: number;
+    lng: number;
+    heading?: number;
+    timestamp: number;
+  };
+}
+

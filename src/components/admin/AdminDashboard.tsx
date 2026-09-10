@@ -45,9 +45,12 @@ import {
   Lock, 
   Eye, 
   AlertTriangle,
-  Database
+  Database,
+  RefreshCw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { PWAInstallButton } from '../common/PWAInstallButton';
+import { updateActiveManifestForRole } from '../../hooks/usePWAInstall';
 
 type AdminTab = 
   | 'overview' 
@@ -82,11 +85,37 @@ export const AdminDashboard: React.FC = () => {
     adminCredentials,
     allUsers,
     allRides,
-    allDrivers
+    allDrivers,
+    syncAdminData
   } = useRide();
 
   const [currentTab, setCurrentTab] = useState<AdminTab>('overview');
   const [activeApprovalSubTab, setActiveApprovalSubTab] = useState<'pending' | 'approved'>('pending');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatusMsg, setSyncStatusMsg] = useState<string | null>(null);
+
+  // Set active PWA manifest to Admin Control Center on mount and initial sync
+  React.useEffect(() => {
+    updateActiveManifestForRole('admin');
+    syncAdminData();
+  }, [syncAdminData]);
+
+  const handleSyncNow = async () => {
+    triggerSound('beep');
+    setIsSyncing(true);
+    setSyncStatusMsg('Syncing enterprise data across devices...');
+    try {
+      await syncAdminData();
+      triggerSound('success');
+      setSyncStatusMsg('Live sync complete!');
+      setTimeout(() => setSyncStatusMsg(null), 3000);
+    } catch {
+      setSyncStatusMsg('Sync completed with local cache.');
+      setTimeout(() => setSyncStatusMsg(null), 3000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [newUsernameVal, setNewUsernameVal] = useState(adminCredentials?.username || 'Admin');
   const [newPasswordVal, setNewPasswordVal] = useState('');
@@ -368,8 +397,24 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Role Switch & Credentials Buttons */}
-        <div className="flex items-center gap-2">
+        {/* Role Switch, PWA, Sync & Credentials Buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Admin PWA Install Button */}
+          <PWAInstallButton role="admin" variant="compact" />
+
+          {/* Cross-device Live Sync Button */}
+          <button
+            id="admin-sync-data-btn"
+            type="button"
+            onClick={handleSyncNow}
+            disabled={isSyncing}
+            className="px-3 py-2 rounded-2xl bg-white border border-neutral-200 hover:bg-neutral-50 active:scale-95 text-neutral-800 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+            title="Sync live data with server and mobile devices"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-[#C8622A] ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Syncing...' : 'Sync'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveRole('driver')}
@@ -429,6 +474,16 @@ export const AdminDashboard: React.FC = () => {
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* Cross-Device Sync Status Banner */}
+      {syncStatusMsg && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-xs font-semibold text-emerald-900 flex items-center justify-between animate-in fade-in duration-200">
+          <div className="flex items-center gap-2">
+            <CheckCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{syncStatusMsg}</span>
+          </div>
         </div>
       )}
 

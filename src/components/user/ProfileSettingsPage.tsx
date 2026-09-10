@@ -14,7 +14,6 @@ import {
   CheckCircle2,
   Sparkles,
   Settings,
-  Zap,
   ArrowLeft,
   Plus,
   Edit2,
@@ -55,7 +54,7 @@ export const ProfileSettingsPage: React.FC<ProfileSettingsPageProps> = ({
   onLogout,
   onNavigateHome,
 }) => {
-  const { setActiveRole, triggerSound, updateUserProfile } = useRide();
+  const { triggerSound, updateUserProfile } = useRide();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
 
@@ -97,20 +96,6 @@ export const ProfileSettingsPage: React.FC<ProfileSettingsPageProps> = ({
   };
 
   const menuItems = [
-    {
-      id: 'captain_portal',
-      title: 'Drive with Toto (Captain Partner)',
-      subtitle: 'Switch to Toto driver mode & accept rides',
-      badge: 'Partner',
-      badgeColor: 'bg-amber-100 text-amber-800 border-amber-300',
-      icon: Zap,
-      iconColor: 'text-[#E07A00]',
-      iconBg: 'bg-amber-50',
-      action: () => {
-        triggerSound('beep');
-        setActiveRole('driver');
-      }
-    },
     {
       id: 'wallet',
       title: 'Toto Drive Wallet',

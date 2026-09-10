@@ -7,7 +7,8 @@
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "postinstall": "node -e \"const f='node_modules/vite-plugin-pwa/dist/index.js'; if (require('fs').existsSync(f)) { let c=require('fs').readFileSync(f,'utf8'); if (c.includes('createRequire(_dirname);')) { c=c.replace('createRequire(_dirname);', 'createRequire(_dirname || process.cwd());').replace('typeof __dirname !== \\\"undefined\\\" ?', 'typeof __dirname !== \\\"undefined\\\" && __dirname !== \\\".\\\" ?'); require('fs').writeFileSync(f, c); } }\""
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

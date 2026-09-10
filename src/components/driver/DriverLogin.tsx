@@ -24,6 +24,8 @@ import {
   Loader2
 } from 'lucide-react';
 import { compressImage, formatFileSize, estimateBase64Size } from '../../utils/imageCompressor';
+import { PWAInstallButton } from '../common/PWAInstallButton';
+import { updateActiveManifestForRole } from '../../hooks/usePWAInstall';
 
 interface DriverLoginProps {
   onLoginSuccess?: () => void;
@@ -74,6 +76,11 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
   const [errorMsg, setErrorMsg] = useState('');
   const [pendingApprovalNotice, setPendingApprovalNotice] = useState<string | null>(null);
   const [registrationSubmitted, setRegistrationSubmitted] = useState(false);
+
+  // Set active PWA manifest to Captain Driver on mount
+  React.useEffect(() => {
+    updateActiveManifestForRole('driver');
+  }, []);
 
   // Handle Driver Photo File Upload with Auto Compression
   const handleDriverPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -265,6 +272,9 @@ export const DriverLogin: React.FC<DriverLoginProps> = ({ onLoginSuccess, onBack
             </button>
           </div>
         </div>
+
+        {/* PWA Install Banner for Captain App */}
+        <PWAInstallButton role="driver" variant="banner" className="mb-2" />
 
         {/* Beige Speedometer Badge */}
         <div className="w-14 h-14 rounded-2xl bg-[#EDE8E0] text-[#111111] flex items-center justify-center shadow-2xs border border-[#E2DDD3]">

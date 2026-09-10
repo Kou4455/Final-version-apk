@@ -212,26 +212,6 @@ export const DriverDashboard: React.FC = () => {
     setJustAccepted(true);
   };
 
-  // Simulate an incoming ride request for easy testing
-  const handleSimulateIncomingRequest = async () => {
-    if (!isOnline) {
-      triggerSound('alert');
-      return;
-    }
-    triggerSound('beep');
-    const randomPick = POPULAR_LOCATIONS[Math.floor(Math.random() * 3)];
-    const randomDrop = POPULAR_LOCATIONS[4 + Math.floor(Math.random() * 3)];
-    const fare = 50 + Math.floor(Math.random() * 45);
-
-    await dispatchRideRequest({
-      passengerName: 'Priyanka Sen',
-      pickupName: randomPick.name,
-      dropoffName: randomDrop.name,
-      fare,
-      driverId: driver?.id || 'all'
-    });
-  };
-
   // --------------------------------------------------------------------------
   // FEATURE 2: Upgraded Earnings Summary dynamically derived from 'trips'
   // --------------------------------------------------------------------------

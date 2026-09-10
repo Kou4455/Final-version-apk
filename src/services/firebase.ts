@@ -10,11 +10,13 @@ import {
   onAuthStateChanged,
   User as FirebaseUser 
 } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase App singleton
 export const firebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
+export const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
 // Configure Google Provider
 export const googleProvider = new GoogleAuthProvider();

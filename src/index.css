@@ -122,3 +122,32 @@
   scrollbar-width: none;  /* Firefox */
 }
 
+/* Standalone PWA mode: hide customer portal captain promotional switch button */
+@media all and (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen), (display-mode: window-controls-overlay) {
+  #header-captain-btn {
+    display: none !important;
+  }
+}
+
+/* Focus Mode Alignment: Map bottom edge and bottom sheet top edge perfect alignment */
+div#root:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div#user-dashboard-root-container:nth-of-type(1) > div#interactive-map-container:nth-of-type(1) > div:nth-of-type(1) {
+  width: 100% !important;
+  height: 100% !important;
+  position: absolute !important;
+  inset: 0 !important;
+  bottom: 0 !important;
+  display: block;
+}
+
+div#root:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div#user-dashboard-root-container:nth-of-type(1) > div#user-dashboard-content-container:nth-of-type(2) > div#route-booking-card:nth-of-type(1) {
+  margin-top: 0 !important;
+  border-top-left-radius: 32px;
+  border-top-right-radius: 32px;
+  border-top: 1px solid #EDE8E0;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05);
+  position: relative;
+  z-index: 10;
+  transition: all 0.2s ease-in-out;
+}
+
+

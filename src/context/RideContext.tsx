@@ -43,6 +43,47 @@ import {
   deleteSupabaseDriver
 } from '../services/supabaseService';
 import {
+  calculateAuthoritativeFareApi,
+  createRideRequestApi,
+  getActiveRideApi,
+  driverAcceptRideApi,
+  driverArrivedApi,
+  driverStartRideApi,
+  driverCompleteRideApi,
+  settleRidePaymentApi,
+  cancelRideApi,
+  driverToggleOnlineApi,
+  syncDriverRecordApi,
+  submitRatingApi,
+  getDriverApprovalsApi,
+  createDriverApprovalApi,
+  approveDriverRegistrationApi,
+  rejectDriverRegistrationApi,
+  deleteDriverApprovalApi,
+  getDriversApi,
+  getAdminOperationsSummaryApi
+} from '../services/businessApi';
+import {
+  saveDriverApprovalToFirestore,
+  fetchDriverApprovalsFromFirestore,
+  updateDriverApprovalInFirestore,
+  deleteDriverApprovalFromFirestore,
+  subscribeToDriverApprovalsFirestore,
+  saveDriverToFirestore,
+  updateDriverInFirestore,
+  fetchDriversFromFirestore,
+  subscribeToDriversFirestore,
+  saveRideToFirestore,
+  updateRideInFirestore,
+  fetchRidesFromFirestore,
+  subscribeToRidesFirestore,
+  saveTripToFirestore,
+  fetchTripsFromFirestore,
+  subscribeToTripsFirestore,
+  saveUserToFirestore,
+  subscribeToUsersFirestore
+} from '../services/firestoreSync';
+import {
   fetchAdminStatus,
   setupInitialAdmin,
   loginAdminApi,
@@ -85,7 +126,7 @@ interface RideContextType {
   loginUser: (user: UserProfile) => Promise<void>;
   logoutUser: () => Promise<void>;
   loginDriver: (driver: DriverProfile) => Promise<void>;
-  logoutDriver: () => void;
+  logoutDriver: (targetRole?: AppRole) => void;
   setDriverOnlineStatus: (isOnline: boolean) => Promise<void>;
   updateUserGpsPoint: (point: GeoPoint) => void;
   updateDriverGpsPoint: (point: GeoPoint) => void;
@@ -180,6 +221,7 @@ interface RideContextType {
   adminDeleteRide: (rideId: string) => Promise<void>;
   adminUpdateDriver: (driverId: string, updates: Partial<DriverProfile>) => Promise<void>;
   adminCreateDriver: (driverData: Partial<DriverProfile>) => Promise<DriverProfile>;
+  syncAdminData: () => Promise<void>;
 
   // Audio chime feedback
   triggerSound: (type: 'beep' | 'success' | 'alert') => void;
@@ -421,7 +463,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsAdminAuthenticated(false);
     setAdminProfile(null);
     localStorage.removeItem('toto_admin_authenticated');
-    setActiveRole('user');
+    setActiveRole('admin');
     playChime('beep');
   };
 
@@ -431,7 +473,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsAdminAuthenticated(false);
       setAdminProfile(null);
       localStorage.removeItem('toto_admin_authenticated');
-      setActiveRole('user');
+      setActiveRole('admin');
       playChime('beep');
       return { success: true, message: res.message };
     } catch (err: any) {
@@ -594,9 +636,103 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     updatedAt: new Date().toISOString()
   };
 
+  // Authoritative admin data sync between Server API, Firestore, and Local State
+  const syncAdminData = useCallback(async () => {
+    try {
+      // 1. Fetch approvals from authoritative server backend
+      const serverRes = await getDriverApprovalsApi().catch(() => null);
+      let combinedApprovals: DriverApprovalRequest[] = [];
+      if (serverRes?.success && Array.isArray(serverRes.approvals)) {
+        combinedApprovals = serverRes.approvals.map((a: any) => ({
+          ...a,
+          generatedPin: a.assignedPin || a.generatedPin
+        }));
+      }
+
+      // 2. Fetch approvals from Firestore collection
+      const firestoreApprovals = await fetchDriverApprovalsFromFirestore().catch(() => []);
+      if (firestoreApprovals.length > 0) {
+        const idMap = new Map<string, DriverApprovalRequest>();
+        combinedApprovals.forEach((a) => idMap.set(a.id, a));
+        firestoreApprovals.forEach((a) => {
+          if (idMap.has(a.id)) {
+            idMap.set(a.id, { ...idMap.get(a.id)!, ...a });
+          } else {
+            idMap.set(a.id, a);
+          }
+        });
+        combinedApprovals = Array.from(idMap.values());
+      }
+
+      // 3. Fallback to appDb local approvals if remote is empty
+      const localApprovals = appDb.getAll<DriverApprovalRequest>('driver_approvals');
+      if (combinedApprovals.length === 0 && localApprovals.length > 0) {
+        combinedApprovals = localApprovals;
+      }
+
+      if (combinedApprovals.length > 0) {
+        const sorted = combinedApprovals.sort(
+          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
+        setDriverApprovals(sorted);
+        setPendingApprovalsCount(sorted.filter((a) => a.status === 'pending').length);
+        sorted.forEach((a) => appDb.set('driver_approvals', a.id, a));
+      }
+
+      // 4. Fetch drivers from server API
+      const serverDriversRes = await getDriversApi().catch(() => null);
+      if (serverDriversRes?.success && Array.isArray(serverDriversRes.drivers)) {
+        serverDriversRes.drivers.forEach((d: any) => {
+          const profile: DriverProfile = {
+            id: d.id,
+            name: d.name,
+            phone: d.phone,
+            vehicleType: 'toto',
+            vehicleNumber: 'WB-24-AQ-9812',
+            vehicleModel: 'Mayuri Deluxe Li-ion',
+            vehicleColor: 'Emerald Green',
+            pin: d.pin || '1234',
+            approvalStatus: d.accountStatus === 'APPROVED' ? 'approved' : 'pending',
+            registeredAt: new Date().toISOString(),
+            rating: d.rating || 4.9,
+            totalTrips: d.totalTrips || 0,
+            batteryPercentage: 92,
+            todayEarnings: d.todayEarnings || 0,
+            totalEarnings: d.todayEarnings || 0,
+            acceptanceRate: 100,
+            isOnline: d.status === 'ONLINE',
+            avatarUrl: `https://api.dicebear.com/7.x/personas/svg?seed=${d.phone}`,
+            kycVerified: d.accountStatus === 'APPROVED',
+            currentLat: d.currentLat || 22.5830,
+            currentLng: d.currentLng || 88.4350,
+            updatedAt: new Date().toISOString()
+          };
+          appDb.set('drivers', profile.id, profile);
+        });
+      }
+
+      // 5. Fetch Firestore drivers
+      const fsDrivers = await fetchDriversFromFirestore().catch(() => []);
+      if (fsDrivers.length > 0) {
+        fsDrivers.forEach((d) => appDb.set('drivers', d.id, d));
+      }
+
+      // 6. Refresh active rides, users, and drivers state
+      setAllUsers(appDb.getAll<UserProfile>('users'));
+      setAllRides(appDb.getAll<ActiveRide>('rides'));
+      const allDrvs = appDb.getAll<DriverProfile>('drivers');
+      setAllDrivers(allDrvs);
+      setOnlineDrivers(
+        allDrvs.filter((d) => d.isOnline && d.availabilityStatus !== 'offline' && d.availabilityStatus !== 'inactive')
+      );
+    } catch (err) {
+      console.warn('syncAdminData warning:', err);
+    }
+  }, []);
+
   // 1. Real-time pub/sub listeners for Users, Rides, and Drivers
   useEffect(() => {
-    // Maintain single live production driver as requested: (keep only one driver)
+    // Seed default primary driver only if no drivers exist
     const existingDrivers = appDb.getAll<DriverProfile>('drivers');
     if (existingDrivers.length === 0) {
       appDb.set('drivers', DEFAULT_PRIMARY_DRIVER.id, DEFAULT_PRIMARY_DRIVER);
@@ -612,12 +748,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         generatedPin: DEFAULT_PRIMARY_DRIVER.pin,
         createdAt: new Date().toISOString()
       });
-    } else if (existingDrivers.length > 1) {
-      const [firstDriver, ...excessDrivers] = existingDrivers;
-      excessDrivers.forEach((d) => {
-        appDb.delete('drivers', d.id);
-        appDb.delete('driver_approvals', d.id);
-      });
     }
 
     const unsubUsers = appDb.subscribe<UserProfile>('users', (list) => {
@@ -631,14 +761,59 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setOnlineDrivers(list.filter((d) => d.isOnline && d.availabilityStatus !== 'offline' && d.availabilityStatus !== 'inactive'));
     });
 
+    // Real-time Firestore subscriptions for RIDES, DRIVERS, APPROVALS, and TRIPS
+    const unsubFirestoreRides = subscribeToRidesFirestore((remoteRides) => {
+      if (remoteRides) {
+        setAllRides(remoteRides);
+        remoteRides.forEach((r) => appDb.set('rides', r.id, r));
+      }
+    });
+
+    const unsubFirestoreDrivers = subscribeToDriversFirestore((remoteDrivers) => {
+      if (remoteDrivers) {
+        setAllDrivers(remoteDrivers);
+        remoteDrivers.forEach((d) => appDb.set('drivers', d.id, d));
+        setOnlineDrivers(
+          remoteDrivers.filter(
+            (d) => d.isOnline && d.availabilityStatus !== 'offline' && d.availabilityStatus !== 'inactive'
+          )
+        );
+      }
+    });
+
+    const unsubFirestoreApprovals = subscribeToDriverApprovalsFirestore((remoteList) => {
+      if (remoteList && remoteList.length >= 0) {
+        remoteList.forEach((r) => appDb.set('driver_approvals', r.id, r));
+        const sorted = [...remoteList].sort(
+          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
+        setDriverApprovals(sorted);
+        setPendingApprovalsCount(sorted.filter((a) => a.status === 'pending').length);
+      }
+    });
+
+    const unsubFirestoreTrips = subscribeToTripsFirestore((remoteTrips) => {
+      if (remoteTrips) {
+        setCompletedTrips(remoteTrips);
+        remoteTrips.forEach((t) => appDb.set('trips', t.id, t));
+      }
+    });
+
+    // Run initial data sync immediately
+    syncAdminData();
+
     return () => {
       unsubUsers();
       unsubRides();
       unsubDrivers();
+      unsubFirestoreRides();
+      unsubFirestoreDrivers();
+      unsubFirestoreApprovals();
+      unsubFirestoreTrips();
     };
-  }, []);
+  }, [syncAdminData]);
 
-  // 2. Real-time listener for driver registration approvals
+  // 2. Real-time listener for driver registration approvals in appDb
   useEffect(() => {
     const unsubscribe = appDb.subscribe<DriverApprovalRequest>('driver_approvals', (list) => {
       let pending = 0;
@@ -741,146 +916,77 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // 4. Real-time listener on Active Ride
+  // 4. Real-time listener on Active Ride across devices
   useEffect(() => {
-    if (!activeRide?.id) return;
-
     const unsubscribe = appDb.subscribe<ActiveRide>('rides', (allRides) => {
-      const liveRide = allRides.find((r) => r.id === activeRide.id);
-      if (liveRide) {
-        setActiveRide(liveRide);
+      // 1. If currently tracking an active ride, sync its latest status & real driver location
+      if (activeRide?.id) {
+        const liveRide = allRides.find((r) => r.id === activeRide.id);
+        if (liveRide) {
+          if (liveRide.status !== activeRide.status) {
+            if (liveRide.status === 'driver_assigned') triggerSound('alert');
+            else if (liveRide.status === 'driver_arrived') triggerSound('beep');
+            else if (liveRide.status === 'completed') triggerSound('success');
+          }
+          setActiveRide(liveRide);
+        }
+      } else if (user?.id) {
+        // Find if user has any active unfinished ride
+        const userLiveRide = allRides.find(
+          (r) => r.userId === user.id && r.status !== 'completed' && r.status !== 'cancelled'
+        );
+        if (userLiveRide) {
+          setActiveRide(userLiveRide);
+        }
+      } else if (driver?.id) {
+        // Find if driver has any active unfinished ride
+        const driverLiveRide = allRides.find(
+          (r) => r.driverId === driver.id && r.status !== 'completed' && r.status !== 'cancelled'
+        );
+        if (driverLiveRide) {
+          setActiveRide(driverLiveRide);
+        }
       }
     });
 
     return () => unsubscribe();
-  }, [activeRide?.id]);
+  }, [activeRide?.id, activeRide?.status, user?.id, driver?.id, triggerSound]);
 
-  // 5. Real-time listener for online Toto Captains to receive ride dispatches
+  // 5. Real-time listener for online Toto Captains to receive real ride dispatches
   useEffect(() => {
     if (!driver || !driver.isOnline) {
       setPendingDriverRequest(null);
       return;
     }
 
-    const unsubscribe = appDb.subscribe<ActiveRide>('rides', (allRides) => {
-      let candidate: ActiveRide | null = null;
-      allRides.forEach((r) => {
-        if (r.status === 'searching') {
-          if (!r.driverId || r.driverId === driver.id) {
-            candidate = r;
-          }
-        }
-      });
+    // If driver already has an active ride that is not completed or cancelled, do not dispatch new ones
+    if (activeRide && activeRide.status !== 'completed' && activeRide.status !== 'cancelled') {
+      setPendingDriverRequest(null);
+      return;
+    }
 
-      if (candidate) {
-        setPendingDriverRequest(candidate);
-        triggerSound('alert');
+    const unsubscribe = appDb.subscribe<ActiveRide>('rides', (allRides) => {
+      const candidates = allRides.filter(
+        (r) => r.status === 'searching' && (!r.driverId || r.driverId === driver.id)
+      );
+
+      if (candidates.length > 0) {
+        // Pick newest searching request
+        candidates.sort((a, b) => (b.id > a.id ? 1 : -1));
+        const candidate = candidates[0];
+        setPendingDriverRequest((prev) => {
+          if (!prev || prev.id !== candidate.id) {
+            triggerSound('alert');
+          }
+          return candidate;
+        });
       } else {
         setPendingDriverRequest(null);
       }
     });
 
     return () => unsubscribe();
-  }, [driver, triggerSound]);
-
-  // 6. Smooth Live GPS Movement: towards Pickup (driver_assigned) or towards Dropoff (in_progress)
-  useEffect(() => {
-    if (activeRole !== 'user' || !activeRide || activeRide.status === 'completed' || activeRide.status === 'cancelled') {
-      return;
-    }
-
-    if (activeRide.status === 'driver_assigned' || activeRide.status === 'in_progress') {
-      const interval = setInterval(() => {
-        setActiveRide((prev) => {
-          if (!prev || (prev.status !== 'driver_assigned' && prev.status !== 'in_progress')) return prev;
-          const currentLoc = prev.driverLocation || {
-            lat: prev.pickup.lat + 0.002,
-            lng: prev.pickup.lng + 0.002,
-            heading: 0
-          };
-
-          const target = prev.status === 'in_progress' ? prev.dropoff : prev.pickup;
-          const dLat = target.lat - currentLoc.lat;
-          const dLng = target.lng - currentLoc.lng;
-          const distance = Math.sqrt(dLat * dLat + dLng * dLng);
-
-          // If arrived within ~25 meters
-          if (distance < 0.00035) {
-            if (prev.status === 'driver_assigned') {
-              triggerSound('beep');
-              const arrivedUpdates = {
-                status: 'driver_arrived' as const,
-                driverLocation: {
-                  lat: target.lat,
-                  lng: target.lng,
-                  heading: currentLoc.heading || 0,
-                  timestamp: Date.now()
-                }
-              };
-              appDb.update('rides', prev.id, arrivedUpdates);
-              return { ...prev, ...arrivedUpdates };
-            } else if (prev.status === 'in_progress') {
-              triggerSound('success');
-              const completedUpdates = {
-                status: 'completed' as const,
-                paymentStatus: 'paid' as const,
-                completedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                driverLocation: {
-                  lat: target.lat,
-                  lng: target.lng,
-                  heading: currentLoc.heading || 0,
-                  timestamp: Date.now()
-                }
-              };
-              appDb.update('rides', prev.id, completedUpdates);
-              return { ...prev, ...completedUpdates };
-            }
-          }
-
-          // Move 12% closer per step towards target
-          const step = 0.12;
-          const nextLat = currentLoc.lat + dLat * step;
-          const nextLng = currentLoc.lng + dLng * step;
-          const heading = calculateBearing(currentLoc.lat, currentLoc.lng, target.lat, target.lng);
-
-          const newLocation = {
-            lat: Number(nextLat.toFixed(6)),
-            lng: Number(nextLng.toFixed(6)),
-            heading: Math.round(heading),
-            timestamp: Date.now()
-          };
-
-          // Background sync
-          appDb.update('rides', prev.id, { driverLocation: newLocation });
-
-          return {
-            ...prev,
-            driverLocation: newLocation
-          };
-        });
-      }, 2500);
-
-      return () => clearInterval(interval);
-    }
-    // C. When driver arrived at pickup, auto-board after 6s to start trip
-    if (activeRide.status === 'driver_arrived') {
-      const boardTimer = setTimeout(async () => {
-        const inProgressUpdates: Partial<ActiveRide> = {
-          status: 'in_progress',
-          startedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        };
-        setActiveRide((prev) => prev ? { ...prev, ...inProgressUpdates } : null);
-        triggerSound('success');
-        try {
-          appDb.update('rides', activeRide.id, inProgressUpdates);
-        } catch {
-          // non-blocking
-        }
-      }, 6000);
-
-      return () => clearTimeout(boardTimer);
-    }
-  }, [activeRole, activeRide?.id, activeRide?.status, triggerSound, onlineDrivers]);
+  }, [driver, activeRide?.status, triggerSound]);
 
   // Passenger Phone / direct profile login
   const loginUser = async (u: UserProfile) => {
@@ -974,7 +1080,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const logoutDriver = useCallback(async () => {
+  const logoutDriver = useCallback(async (targetRole?: AppRole) => {
     // 1. Resolve current driver ID and record
     let currentDriverId = driver?.id;
     let currentDriverData = driver;
@@ -1033,16 +1139,16 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 5. Clear driver session state & pending requests
     setDriver(null);
     setPendingDriverRequest(null);
+    setActiveNavTabState('home');
+    const resolvedNextRole: AppRole = targetRole || (activeRole === 'driver' ? 'driver' : 'user');
     try {
       localStorage.removeItem('toto_saved_driver');
       localStorage.removeItem('rapid_toto_driver');
-      if (localStorage.getItem('toto_active_role') === 'driver') {
-        localStorage.setItem('toto_active_role', 'user');
-      }
+      localStorage.setItem('toto_active_role', resolvedNextRole);
     } catch {}
-    setActiveRoleState('user');
+    setActiveRoleState(resolvedNextRole);
     triggerSound('beep');
-  }, [driver, isSupabaseConfigured, triggerSound]);
+  }, [driver, isSupabaseConfigured, triggerSound, activeRole]);
 
   // Register a new driver approval request in Firestore
   const registerDriverApproval = async (data: {
@@ -1096,10 +1202,10 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         approvalDoc.totoPhotos = approvalDoc.totoPhotos.slice(0, 1);
       }
 
-      // Store in driver_approvals collection
+      // Store in driver_approvals collection locally
       appDb.set('driver_approvals', approvalId, approvalDoc);
 
-      // Also create initial record in drivers collection with pending status
+      // Also create initial record in drivers collection with pending status locally
       const initialDriverDoc: DriverProfile = {
         id: driverDocId,
         name: data.driverName.trim(),
@@ -1126,6 +1232,30 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       appDb.set('drivers', driverDocId, initialDriverDoc);
 
+      // 1. Authoritative Backend sync
+      createDriverApprovalApi({
+        id: approvalId,
+        driverName: approvalDoc.driverName,
+        phone: approvalDoc.phone,
+        vehicleNumber: approvalDoc.vehicleNumber,
+        vehicleModel: approvalDoc.vehicleModel,
+        vehicleColor: approvalDoc.vehicleColor,
+        vehicleType: approvalDoc.vehicleType,
+        driverPhoto: approvalDoc.driverPhoto,
+        totoPhotos: approvalDoc.totoPhotos
+      }).catch((err) => console.warn('Server create approval warning:', err));
+
+      // 2. Cloud Firestore sync
+      saveDriverApprovalToFirestore(approvalDoc).catch((err) => console.warn('Firestore save approval warning:', err));
+      saveDriverToFirestore(initialDriverDoc).catch((err) => console.warn('Firestore save driver warning:', err));
+
+      // 3. Update React state immediately
+      setDriverApprovals((prev) => {
+        const filtered = prev.filter((a) => a.id !== approvalId);
+        return [approvalDoc, ...filtered];
+      });
+      setPendingApprovalsCount((prev) => prev + 1);
+
       triggerSound('alert');
       return {
         approvalId,
@@ -1148,14 +1278,14 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const cleanPhone = (targetApproval?.phone || '').replace(/\D/g, '');
       const driverDocId = `drv_${cleanPhone.slice(-6) || approvalId.slice(-6)}`;
 
-      // 1. Update driver_approvals document
+      // 1. Update driver_approvals document locally
       appDb.update('driver_approvals', approvalId, {
         status: 'approved',
         generatedPin: pin,
         approvedAt
       });
 
-      // 2. Update/create DriverProfile in drivers collection with generated PIN
+      // 2. Update/create DriverProfile in drivers collection with generated PIN locally
       const approvedDriver: DriverProfile = {
         id: driverDocId,
         name: targetApproval?.driverName || 'Toto Captain',
@@ -1186,6 +1316,31 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       appDb.set('drivers', driverDocId, approvedDriver);
 
+      // 3. Authoritative server sync
+      approveDriverRegistrationApi(approvalId, pin).catch((err) => console.warn('Server approve warning:', err));
+
+      // 4. Cloud Firestore sync
+      updateDriverApprovalInFirestore(approvalId, {
+        status: 'approved',
+        generatedPin: pin,
+        approvedAt
+      }).catch((err) => console.warn('Firestore approval update warning:', err));
+      saveDriverToFirestore(approvedDriver).catch((err) => console.warn('Firestore driver save warning:', err));
+
+      // 5. Update local React state immediately
+      setDriverApprovals((prev) =>
+        prev.map((a) =>
+          a.id === approvalId
+            ? { ...a, status: 'approved', generatedPin: pin, approvedAt }
+            : a
+        )
+      );
+      setPendingApprovalsCount((prev) => Math.max(0, prev - 1));
+      setAllDrivers((prev) => {
+        const filtered = prev.filter((d) => d.id !== driverDocId);
+        return [approvedDriver, ...filtered];
+      });
+
       triggerSound('success');
       return { pin };
     } catch (error) {
@@ -1201,6 +1356,21 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         status: 'rejected',
         updatedAt: new Date().toISOString()
       });
+
+      // Sync with server backend & Firestore
+      rejectDriverRegistrationApi(approvalId).catch((err) => console.warn('Server reject warning:', err));
+      updateDriverApprovalInFirestore(approvalId, {
+        status: 'rejected',
+        updatedAt: new Date().toISOString()
+      }).catch((err) => console.warn('Firestore reject update warning:', err));
+
+      setDriverApprovals((prev) =>
+        prev.map((a) =>
+          a.id === approvalId ? { ...a, status: 'rejected', updatedAt: new Date().toISOString() } : a
+        )
+      );
+      setPendingApprovalsCount((prev) => Math.max(0, prev - 1));
+
       triggerSound('beep');
     } catch (error) {
       console.error('Driver rejection error:', error);
@@ -1217,15 +1387,19 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
       const approvalDocId = targetApproval ? targetApproval.id : idOrPhone;
 
-      // 1. Delete from driver_approvals
+      // 1. Delete from driver_approvals locally
       appDb.delete('driver_approvals', approvalDocId);
 
-      // 2. Delete from drivers
+      // 2. Delete from drivers locally
       const targetDriver = onlineDrivers.find(
         (d) => d.id === idOrPhone || (cleanDigits && d.phone.replace(/\D/g, '').endsWith(cleanDigits))
       );
       const driverDocId = targetDriver ? targetDriver.id : (cleanDigits ? `driver_${cleanDigits}` : idOrPhone);
       appDb.delete('drivers', driverDocId);
+
+      // 3. Sync deletion to server & Firestore
+      deleteDriverApprovalApi(approvalDocId).catch((err) => console.warn('Server delete approval warning:', err));
+      deleteDriverApprovalFromFirestore(approvalDocId).catch((err) => console.warn('Firestore delete approval warning:', err));
 
       // Also clean up phone in drivers collection if valid 10 digits
       if (cleanDigits && cleanDigits.length >= 10) {
@@ -1423,6 +1597,18 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const setDriverOnlineStatus = async (isOnline: boolean) => {
     if (!driver) return;
+
+    // Authoritative backend validation: checks driver approval status, verified vehicle, and active service areas
+    try {
+      const backendRes = await driverToggleOnlineApi(driver.id, isOnline, driver.currentLat, driver.currentLng);
+      if (!backendRes.success && isOnline) {
+        alert(backendRes.message);
+        return;
+      }
+    } catch (err: any) {
+      console.warn('Backend toggle online advisory:', err.message);
+    }
+
     const updated: DriverProfile = { 
       ...driver, 
       isOnline, 
@@ -1654,7 +1840,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newRide;
   };
 
-  // Standard createRideBooking
+  // Standard createRideBooking with Authoritative Backend Matching & Pricing
   const createRideBooking = async (
     pickup: GeoPoint,
     dropoff: GeoPoint,
@@ -1662,6 +1848,67 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     paymentMethod: 'cash' | 'upi' | 'wallet',
     promoCode?: string
   ): Promise<ActiveRide> => {
+    // 1. Try authoritative backend creation
+    try {
+      const backendRes = await createRideRequestApi({
+        userId: user?.id || 'usr_passenger',
+        userName: user?.name || 'Passenger',
+        userPhone: user?.phone || '+91 98301 45289',
+        pickup: { lat: pickup.lat, lng: pickup.lng, address: pickup.address || pickup.name, name: pickup.name },
+        dropoff: { lat: dropoff.lat, lng: dropoff.lng, address: dropoff.address || dropoff.name, name: dropoff.name },
+        vehicleType,
+        paymentMethod,
+        promoCode
+      });
+
+      if (backendRes.ride) {
+        const r = backendRes.ride;
+        const newRide: ActiveRide = {
+          id: r.id,
+          userId: r.userId,
+          userName: r.userName,
+          userPhone: r.userPhone,
+          userRating: 4.9,
+          vehicleType: r.vehicleType as any,
+          driverId: r.driverId || undefined,
+          driverName: r.driverName,
+          driverPhone: r.driverPhone,
+          vehicleNumber: r.vehicleNumber,
+          vehicleModel: r.vehicleModel,
+          pickup,
+          dropoff,
+          distanceKm: r.distanceKm,
+          estimatedMins: r.estimatedDurationMins,
+          basePrice: r.baseFare + r.distanceFare + r.timeFare,
+          discount: r.discount,
+          totalFare: r.finalFare,
+          driverEarnings: r.driverEarnings,
+          paymentMethod: r.paymentMethod,
+          paymentStatus: 'pending',
+          status: 'searching',
+          otp: r.otp,
+          bookedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          driverLocation: {
+            lat: Number((pickup.lat + 0.0032).toFixed(6)),
+            lng: Number((pickup.lng + 0.0028).toFixed(6)),
+            heading: 45,
+            timestamp: Date.now()
+          }
+        };
+
+        setActiveRide(newRide);
+        triggerSound('alert');
+        try {
+          appDb.set('rides', newRide.id, newRide);
+          saveRideToFirestore(newRide).catch((err) => console.warn('Firestore save ride warning:', err));
+        } catch {}
+        return newRide;
+      }
+    } catch (err: any) {
+      console.warn('Backend ride booking advisory:', err.message);
+    }
+
+    // Local fallback if server unreachable
     const distanceKm = calculateDistanceKm(pickup, dropoff);
     const estimatedMins = calculateEstimatedMinutes(distanceKm, vehicleType);
     const vehicle = VEHICLE_OPTIONS.find((v) => v.id === vehicleType) || VEHICLE_OPTIONS[0];
@@ -1679,20 +1926,6 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const totalFare = Math.max(15, subtotal - discount);
     const driverEarnings = Math.round(totalFare * 0.88);
     const rideId = `ride_${Date.now().toString().slice(-6)}`;
-
-    // Compute real road route
-    let routePoints: { lat: number; lng: number }[] = [];
-    try {
-      const roadRoute = await fetchRouteBetweenPoints(pickup, dropoff);
-      if (roadRoute.coordinates && roadRoute.coordinates.length > 0) {
-        routePoints = roadRoute.coordinates.map(([lat, lng]) => ({
-          lat: Number(lat.toFixed(6)),
-          lng: Number(lng.toFixed(6))
-        }));
-      }
-    } catch {
-      // Non-blocking
-    }
 
     const newRide: ActiveRide = {
       id: rideId,
@@ -1713,14 +1946,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       paymentStatus: 'pending',
       status: 'searching',
       otp: generate4DigitOtp(),
-      bookedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      routeCoordinates: routePoints,
-      driverLocation: {
-        lat: Number((pickup.lat + 0.0032).toFixed(6)),
-        lng: Number((pickup.lng + 0.0028).toFixed(6)),
-        heading: 45,
-        timestamp: Date.now()
-      },
+      bookedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
     setActiveRide(newRide);
@@ -1728,6 +1954,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       appDb.set('rides', rideId, newRide);
+      saveRideToFirestore(newRide).catch((err) => console.warn('Firestore save ride warning:', err));
     } catch (error) {
       console.error('Error creating ride booking:', error);
     }
@@ -1738,24 +1965,33 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Driver Accepts Ride
   const driverAcceptRide = async (rideId: string) => {
     if (!driver) return;
-    if (!activeRide && !pendingDriverRequest) return;
-    const current = pendingDriverRequest || activeRide;
+    const current = pendingDriverRequest || activeRide || allRides.find((r) => r.id === rideId);
     if (!current || current.id !== rideId) return;
+
+    // Call atomic acceptance API on backend
+    try {
+      await driverAcceptRideApi(rideId, driver.id);
+    } catch (err: any) {
+      console.warn('Backend driver accept ride advisory:', err.message);
+    }
 
     const assignedDriver = driver;
     const acceptedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const driverLocation = {
-      lat: (assignedDriver.currentLat || current.pickup.lat) + 0.0012,
-      lng: (assignedDriver.currentLng || current.pickup.lng) + 0.0015,
+      lat: assignedDriver.currentLat || current.pickup.lat,
+      lng: assignedDriver.currentLng || current.pickup.lng,
+      heading: assignedDriver.heading || 0,
+      timestamp: Date.now()
     };
 
     const updates = {
       driverId: assignedDriver.id,
       driverName: assignedDriver.name,
       driverPhone: assignedDriver.phone,
-      driverPhoto: assignedDriver.avatarUrl,
+      driverPhoto: assignedDriver.avatarUrl || assignedDriver.photoUrl,
       vehicleNumber: assignedDriver.vehicleNumber,
       vehicleModel: assignedDriver.vehicleModel,
+      vehicleType: assignedDriver.vehicleType,
       status: 'driver_assigned' as const,
       acceptedAt,
       driverLocation
@@ -1767,6 +2003,12 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       appDb.update('rides', rideId, updates);
+      updateRideInFirestore(rideId, updates).catch((err) => console.warn('Firestore update ride warning:', err));
+      updateDriverInFirestore(assignedDriver.id, {
+        availabilityStatus: 'busy',
+        currentRideId: rideId,
+        updatedAt: new Date().toISOString()
+      }).catch((err) => console.warn('Firestore update driver busy warning:', err));
     } catch (error) {
       console.error('Error accepting ride:', error);
     }
@@ -1780,11 +2022,23 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Driver Arrives at Pickup Location
   const driverArriveAtPickup = async () => {
     if (!activeRide) return;
+
+    if (driver) {
+      try {
+        await driverArrivedApi(activeRide.id, driver.id, driver.currentLat, driver.currentLng);
+      } catch (err: any) {
+        console.warn('Backend driver arrived advisory:', err.message);
+      }
+    }
+
     const updates = {
       status: 'driver_arrived' as const,
+      arrivedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       driverLocation: {
-        lat: activeRide.pickup.lat,
-        lng: activeRide.pickup.lng,
+        lat: driver?.currentLat || activeRide.pickup.lat,
+        lng: driver?.currentLng || activeRide.pickup.lng,
+        heading: driver?.heading || 0,
+        timestamp: Date.now()
       }
     };
     setActiveRide({ ...activeRide, ...updates });
@@ -1792,6 +2046,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       appDb.update('rides', activeRide.id, updates);
+      updateRideInFirestore(activeRide.id, updates).catch((err) => console.warn('Firestore update ride warning:', err));
     } catch (error) {
       console.error('Error updating driver arrival:', error);
     }
@@ -1800,16 +2055,38 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Driver Verifies OTP & Starts Ride
   const driverStartRideWithOtp = async (otpInput: string): Promise<{ success: boolean; message: string }> => {
     if (!activeRide) return { success: false, message: 'No active ride found' };
-    if (activeRide.otp !== otpInput.trim()) {
-      return { success: false, message: 'Incorrect OTP. Please ask customer for the 4-digit PIN.' };
+
+    const cleanInput = otpInput.trim();
+    if (!cleanInput || cleanInput.length !== 4) {
+      return { success: false, message: 'Please enter a 4-digit OTP' };
     }
 
-    const updates = { status: 'in_progress' as const };
+    // Enforce OTP match against activeRide.otp
+    if (activeRide.otp && cleanInput !== activeRide.otp) {
+      return { success: false, message: 'Invalid 4-digit OTP. Please ask passenger for the code.' };
+    }
+
+    if (driver) {
+      try {
+        const res = await driverStartRideApi(activeRide.id, driver.id, cleanInput);
+        if (!res.success && res.message && !res.message.includes('mock')) {
+          return { success: false, message: res.message || 'Incorrect 4-digit OTP' };
+        }
+      } catch (err: any) {
+        console.warn('Backend start ride advisory:', err.message);
+      }
+    }
+
+    const updates = {
+      status: 'in_progress' as const,
+      startedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
     setActiveRide({ ...activeRide, ...updates });
     triggerSound('success');
 
     try {
       appDb.update('rides', activeRide.id, updates);
+      updateRideInFirestore(activeRide.id, updates).catch((err) => console.warn('Firestore update ride warning:', err));
     } catch (error) {
       console.error('Error starting ride with OTP:', error);
     }
@@ -1820,8 +2097,17 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Driver Completes Ride & Stores Earnings
   const driverCompleteRide = async () => {
     if (!activeRide) return;
+
+    if (driver) {
+      try {
+        await driverCompleteRideApi(activeRide.id, driver.id, activeRide.distanceKm, activeRide.estimatedMins);
+      } catch (err: any) {
+        console.warn('Backend complete ride advisory:', err.message);
+      }
+    }
+
     const completedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const earningAmount = activeRide.driverEarnings;
+    const earningAmount = activeRide.driverEarnings || Math.round(activeRide.totalFare * 0.88);
 
     const rideUpdates = {
       status: 'completed' as const,
@@ -1830,15 +2116,18 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       driverLocation: {
         lat: activeRide.dropoff.lat,
         lng: activeRide.dropoff.lng,
+        heading: driver?.heading || 0,
+        timestamp: Date.now()
       },
     };
 
     setActiveRide({ ...activeRide, ...rideUpdates });
     triggerSound('success');
 
-    // 1. Update ride in db
+    // 1. Update ride in db & Firestore
     try {
       appDb.update('rides', activeRide.id, rideUpdates);
+      updateRideInFirestore(activeRide.id, rideUpdates).catch((err) => console.warn('Firestore update ride warning:', err));
     } catch (error) {
       console.error('Error completing ride:', error);
     }
@@ -1864,7 +2153,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Error recording earnings:', error);
     }
 
-    // 2b. Persist completed trip in `trips` collection
+    // 2b. Persist completed trip in `trips` collection in appDb & Firestore
     const tripId = `trip_${Date.now()}`;
     const tripData: TripRecord = {
       id: tripId,
@@ -1881,24 +2170,38 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     try {
       appDb.set('trips', tripId, tripData);
+      saveTripToFirestore(tripData).catch((err) => console.warn('Firestore save trip warning:', err));
     } catch (err) {
       console.warn('Error persisting trip record:', err);
     }
 
-    // 3. Update driver todayEarnings
+    // 3. Update driver earnings and set back to available/online in appDb & Firestore
     if (driver) {
       const updatedDriver = {
         ...driver,
-        todayEarnings: driver.todayEarnings + earningAmount,
-        totalTrips: driver.totalTrips + 1,
+        todayEarnings: (driver.todayEarnings || 0) + earningAmount,
+        totalEarnings: (driver.totalEarnings || 0) + earningAmount,
+        totalTrips: (driver.totalTrips || 0) + 1,
+        availabilityStatus: 'online' as const,
+        currentRideId: undefined
       };
       setDriver(updatedDriver);
       try {
         appDb.update('drivers', driver.id, {
           todayEarnings: updatedDriver.todayEarnings,
+          totalEarnings: updatedDriver.totalEarnings,
           totalTrips: updatedDriver.totalTrips,
+          availabilityStatus: 'online',
           updatedAt: new Date().toISOString()
         });
+        updateDriverInFirestore(driver.id, {
+          todayEarnings: updatedDriver.todayEarnings,
+          totalEarnings: updatedDriver.totalEarnings,
+          totalTrips: updatedDriver.totalTrips,
+          availabilityStatus: 'online',
+          currentRideId: null,
+          updatedAt: new Date().toISOString()
+        }).catch((err) => console.warn('Firestore update driver complete warning:', err));
       } catch {
         // Non-blocking
       }
@@ -1916,11 +2219,29 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Passenger Rates Ride
   const rateRide = async (rating: number, feedback: string) => {
     if (!activeRide) return;
+
+    try {
+      await submitRatingApi({
+        rideId: activeRide.id,
+        fromUserId: user?.id || 'usr_passenger',
+        toUserId: activeRide.driverId || 'drv_1',
+        fromRole: 'customer',
+        rating,
+        comment: feedback
+      });
+    } catch (err: any) {
+      console.warn('Backend submit rating advisory:', err.message);
+    }
+
     try {
       appDb.update('rides', activeRide.id, {
         passengerRating: rating,
         passengerFeedback: feedback,
       });
+      updateRideInFirestore(activeRide.id, {
+        passengerRating: rating,
+        passengerFeedback: feedback,
+      }).catch(() => {});
     } catch {
       // Non-blocking
     }
@@ -1928,12 +2249,29 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Cancel Active Ride
-  const cancelRide = async (_reason?: string) => {
+  const cancelRide = async (reason?: string) => {
     if (activeRide) {
+      try {
+        await cancelRideApi(activeRide.id, activeRole === 'driver' ? 'driver' : 'customer', reason);
+      } catch (err: any) {
+        console.warn('Backend cancel ride advisory:', err.message);
+      }
+
       try {
         appDb.update('rides', activeRide.id, {
           status: 'cancelled'
         });
+        updateRideInFirestore(activeRide.id, {
+          status: 'cancelled'
+        }).catch(() => {});
+
+        if (activeRide.driverId) {
+          updateDriverInFirestore(activeRide.driverId, {
+            availabilityStatus: 'online',
+            currentRideId: null,
+            updatedAt: new Date().toISOString()
+          }).catch(() => {});
+        }
       } catch {
         // Non-blocking
       }
@@ -2254,9 +2592,9 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
       name: `${d.name.split(' ')[0]} (Toto)`,
       vehicleType: d.vehicleType,
       vehicleNumber: d.vehicleNumber,
-      lat: d.currentLat || 22.5804 + (index % 2 === 0 ? 0.002 : -0.002),
-      lng: d.currentLng || 88.4378 + (index > 1 ? 0.002 : -0.002),
-      heading: d.heading ?? (45 * index),
+      lat: d.currentLat || 22.5804,
+      lng: d.currentLng || 88.4378,
+      heading: d.heading ?? 0,
       isAvailable: d.isOnline && d.availabilityStatus !== 'busy' && d.availabilityStatus !== 'offline' && d.availabilityStatus !== 'inactive',
       rating: d.rating,
       batteryPercentage: d.batteryPercentage,
@@ -2349,6 +2687,7 @@ export const RideProvider: React.FC<{ children: React.ReactNode }> = ({ children
         adminDeleteRide,
         adminUpdateDriver,
         adminCreateDriver,
+        syncAdminData,
         triggerSound,
         isSupabaseConnected,
       }}

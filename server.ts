@@ -1,6 +1,6 @@
 import express from "express";
+import http from "http";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import {
   adminExists,
   createInitialAdmin,
@@ -14,10 +14,39 @@ import {
   getAdminSafe,
   logSecurityActivity
 } from "./server/adminAuth";
+import {
+  calculateAuthoritativeFare,
+  setDriverOnlineStatusAuthoritative,
+  syncDriverRecord,
+  getOrCreateVehicle,
+  createRideRequestAuthoritative,
+  driverAcceptRideAuthoritative,
+  driverArrivedAuthoritative,
+  driverStartRideAuthoritative,
+  driverCompleteRideAuthoritative,
+  settleRidePaymentAuthoritative,
+  cancelRideAuthoritative,
+  submitAuthoritativeRating,
+  requestDriverWithdrawalAuthoritative,
+  processWithdrawalAuthoritative,
+  createSupportTicketAuthoritative,
+  updateSupportTicketAuthoritative,
+  getAdminOperationsSummary,
+  getEngineState,
+  updateSystemConfigAuthoritative,
+  getDriverApprovalsAuthoritative,
+  createDriverApprovalAuthoritative,
+  approveDriverRegistrationAuthoritative,
+  rejectDriverRegistrationAuthoritative,
+  deleteDriverApprovalAuthoritative,
+  getAllDriversAuthoritative
+} from "./server/businessEngine";
+import fs from "fs";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
+  const httpServer = http.createServer(app);
 
   app.use(express.json());
 
@@ -255,6 +284,593 @@ async function startServer() {
     });
   });
 
+  // ==============================================================================
+  // AUTHORITATIVE TOTO DRIVE BUSINESS ENGINE APIS
+  // ==============================================================================
+
+  // 1. Authoritative Fare Estimation API
+  app.post("/api/fare/calculate", (req, res) => {
+    try {
+      const { vehicleType, distanceKm, estimatedDurationMins, waitingMinutes, promoCode } = req.body || {};
+      if (typeof distanceKm !== 'number') {
+        res.status(400).json({ error: "distanceKm is required." });
+        return;
+      }
+      const fare = calculateAuthoritativeFare({
+        vehicleType: vehicleType || 'toto',
+        distanceKm,
+        estimatedDurationMins,
+        waitingMinutes,
+        promoCode
+      });
+      res.json({ success: true, fare });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to calculate fare." });
+    }
+  });
+
+  // 2. Authoritative Ride Booking & Matching Dispatch API
+  app.post("/api/rides/request", (req, res) => {
+    try {
+      const { userId, userName, userPhone, pickup, dropoff, vehicleType, paymentMethod, promoCode, targetDriverId } = req.body || {};
+      if (!userId || !pickup || !dropoff) {
+        res.status(400).json({ error: "Missing required ride booking parameters." });
+        return;
+      }
+      const result = createRideRequestAuthoritative({
+        userId,
+        userName: userName || 'Passenger',
+        userPhone: userPhone || '',
+        pickup,
+        dropoff,
+        vehicleType: vehicleType || 'toto',
+        paymentMethod: paymentMethod || 'cash',
+        promoCode,
+        targetDriverId
+      });
+      res.status(201).json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Ride request rejected by business engine." });
+    }
+  });
+
+  // 3. Active Ride Recovery (App restart recovery)
+  app.get("/api/rides/active", (req, res) => {
+    try {
+      const { userId, driverId } = req.query;
+      const state = getEngineState();
+      const allRides = Object.values(state.rides);
+
+      let active: any = null;
+      if (userId) {
+        active = allRides.find(r => r.userId === userId && r.status !== 'CLOSED' && r.status !== 'CUSTOMER_CANCELLED' && r.status !== 'DRIVER_CANCELLED');
+      } else if (driverId) {
+        active = allRides.find(r => r.driverId === driverId && r.status !== 'CLOSED' && r.status !== 'CUSTOMER_CANCELLED' && r.status !== 'DRIVER_CANCELLED');
+      }
+
+      res.json({ success: true, activeRide: active || null });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to fetch active ride." });
+    }
+  });
+
+  // 4. Atomic Ride Acceptance by Driver
+  app.post("/api/rides/:id/accept", (req, res) => {
+    try {
+      const rideId = req.params.id;
+      const { driverId } = req.body || {};
+      if (!driverId) {
+        res.status(400).json({ error: "driverId is required to accept ride." });
+        return;
+      }
+      const result = driverAcceptRideAuthoritative(rideId, driverId);
+      if (!result.success) {
+        res.status(409).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to accept ride." });
+    }
+  });
+
+  // 5. Driver Arrived at Pickup
+  app.post("/api/rides/:id/arrived", (req, res) => {
+    try {
+      const rideId = req.params.id;
+      const { driverId, lat, lng } = req.body || {};
+      if (!driverId) {
+        res.status(400).json({ error: "driverId is required." });
+        return;
+      }
+      const result = driverArrivedAuthoritative(rideId, driverId, lat, lng);
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to mark arrived." });
+    }
+  });
+
+  // 6. Driver Start Ride with 4-Digit OTP Verification
+  app.post("/api/rides/:id/start", (req, res) => {
+    try {
+      const rideId = req.params.id;
+      const { driverId, otp } = req.body || {};
+      if (!driverId || !otp) {
+        res.status(400).json({ error: "driverId and 4-digit otp are required to start trip." });
+        return;
+      }
+      const result = driverStartRideAuthoritative(rideId, driverId, otp);
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to start ride." });
+    }
+  });
+
+  // 7. Driver Complete Ride & Generate Authoritative Invoice
+  app.post("/api/rides/:id/complete", (req, res) => {
+    try {
+      const rideId = req.params.id;
+      const { driverId, actualDistanceKm, actualDurationMins } = req.body || {};
+      if (!driverId) {
+        res.status(400).json({ error: "driverId is required." });
+        return;
+      }
+      const result = driverCompleteRideAuthoritative(rideId, driverId, actualDistanceKm, actualDurationMins);
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to complete ride." });
+    }
+  });
+
+  // 8. Payment Settlement
+  app.post("/api/rides/:id/pay", (req, res) => {
+    try {
+      const rideId = req.params.id;
+      const { paymentMethod } = req.body || {};
+      const result = settleRidePaymentAuthoritative(rideId, paymentMethod || 'cash');
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to confirm payment." });
+    }
+  });
+
+  // 9. Cancel Ride Authoritative
+  app.post("/api/rides/:id/cancel", (req, res) => {
+    try {
+      const rideId = req.params.id;
+      const { actor, reason } = req.body || {};
+      const result = cancelRideAuthoritative(rideId, actor || 'customer', reason);
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to cancel ride." });
+    }
+  });
+
+  // 10. Driver Toggle Online / Offline with Full Validation
+  app.post("/api/drivers/:id/toggle-online", (req, res) => {
+    try {
+      const driverId = req.params.id;
+      const { online, lat, lng } = req.body || {};
+      const result = setDriverOnlineStatusAuthoritative(driverId, Boolean(online), lat, lng);
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to toggle driver status." });
+    }
+  });
+
+  // 11. Sync Driver Profile Record
+  app.post("/api/drivers/sync", (req, res) => {
+    try {
+      const driverData = req.body;
+      if (!driverData || !driverData.id || !driverData.name) {
+        res.status(400).json({ error: "Valid driver record with id and name required." });
+        return;
+      }
+      const synced = syncDriverRecord(driverData);
+      const vehicle = getOrCreateVehicle(driverData.id, driverData.vehicle);
+      res.json({ success: true, driver: synced, vehicle });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to sync driver." });
+    }
+  });
+
+  // 12. Driver Transaction Ledger API
+  app.get("/api/drivers/:id/ledger", (req, res) => {
+    try {
+      const driverId = req.params.id;
+      const state = getEngineState();
+      const entries = state.ledger.filter(l => l.driverId === driverId);
+      const driver = state.drivers[driverId];
+      res.json({
+        success: true,
+        balance: driver ? driver.walletBalance : 0,
+        entries
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to fetch ledger." });
+    }
+  });
+
+  // 13. Driver Withdrawal Request API
+  app.post("/api/drivers/:id/withdraw", (req, res) => {
+    try {
+      const driverId = req.params.id;
+      const { amount, method, payoutDetails } = req.body || {};
+      if (!amount || !method || !payoutDetails) {
+        res.status(400).json({ error: "amount, method, and payoutDetails are required." });
+        return;
+      }
+      const result = requestDriverWithdrawalAuthoritative(driverId, Number(amount), method, payoutDetails);
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to process withdrawal request." });
+    }
+  });
+
+  // 14. Ratings Submission & Inspection API
+  app.post("/api/ratings", (req, res) => {
+    try {
+      const { rideId, fromUserId, toUserId, fromRole, rating, comment } = req.body || {};
+      if (!rideId || !fromUserId || !toUserId || !rating) {
+        res.status(400).json({ error: "Missing required rating parameters." });
+        return;
+      }
+      const result = submitAuthoritativeRating({
+        rideId,
+        fromUserId,
+        toUserId,
+        fromRole: fromRole || 'customer',
+        rating: Number(rating),
+        comment
+      });
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to submit rating." });
+    }
+  });
+
+  app.get("/api/ratings", (req, res) => {
+    try {
+      const state = getEngineState();
+      res.json({ success: true, ratings: state.ratings });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 15. Coupon Validation API
+  app.post("/api/coupons/validate", (req, res) => {
+    try {
+      const { code, fareAmount } = req.body || {};
+      if (!code) {
+        res.status(400).json({ error: "Coupon code is required." });
+        return;
+      }
+      const state = getEngineState();
+      const coupon = state.coupons[code.trim().toUpperCase()];
+      if (!coupon || !coupon.isActive) {
+        res.status(404).json({ valid: false, message: "Invalid or inactive promo code." });
+        return;
+      }
+      if (new Date(coupon.expiryDate) < new Date()) {
+        res.status(400).json({ valid: false, message: "Coupon has expired." });
+        return;
+      }
+      if (fareAmount && fareAmount < coupon.minFare) {
+        res.status(400).json({ valid: false, message: `Minimum ride fare for this coupon is ₹${coupon.minFare}.` });
+        return;
+      }
+
+      let discount = coupon.discountType === 'percentage'
+        ? Math.min(coupon.maxDiscount, Math.round(((fareAmount || 50) * coupon.discountValue) / 100))
+        : Math.min(coupon.maxDiscount, coupon.discountValue);
+
+      res.json({
+        valid: true,
+        code: coupon.code,
+        discount,
+        coupon
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 16. Support Tickets API
+  app.get("/api/support/tickets", (req, res) => {
+    try {
+      const { userId } = req.query;
+      const state = getEngineState();
+      let list = state.supportTickets;
+      if (userId) {
+        list = list.filter(t => t.userId === userId);
+      }
+      res.json({ success: true, tickets: list });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/support/tickets", (req, res) => {
+    try {
+      const { userId, userName, userRole, rideId, category, subject, description, priority } = req.body || {};
+      if (!userId || !subject || !description) {
+        res.status(400).json({ error: "userId, subject, and description are required." });
+        return;
+      }
+      const ticket = createSupportTicketAuthoritative({
+        userId,
+        userName: userName || 'User',
+        userRole: userRole || 'user',
+        rideId,
+        category: category || 'other',
+        subject,
+        description,
+        priority
+      });
+      res.status(201).json({ success: true, ticket });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/support/tickets/:id", requireAdminAuth, (req, res) => {
+    try {
+      const ticketId = req.params.id;
+      const updates = req.body;
+      const result = updateSupportTicketAuthoritative(ticketId, updates);
+      if (!result.success) {
+        res.status(404).json({ error: "Ticket not found." });
+        return;
+      }
+      res.json({ success: true, ticket: result.ticket });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 17. Admin Operations Summary & KPIs
+  app.get("/api/admin/operations-summary", requireAdminAuth, (req, res) => {
+    try {
+      const summary = getAdminOperationsSummary();
+      res.json({ success: true, summary });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 18. Admin Pricing Controls API
+  app.get("/api/admin/pricing", (req, res) => {
+    try {
+      const state = getEngineState();
+      res.json({ success: true, pricing: state.systemConfig });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/pricing", requireAdminAuth, (req, res) => {
+    try {
+      const updated = updateSystemConfigAuthoritative(req.body);
+      res.json({ success: true, pricing: updated, message: "System pricing and parameters updated." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 19. Admin Service Areas API
+  app.get("/api/admin/service-areas", (req, res) => {
+    try {
+      const state = getEngineState();
+      res.json({ success: true, serviceAreas: state.serviceAreas });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/service-areas", requireAdminAuth, (req, res) => {
+    try {
+      const state = getEngineState();
+      const { name, city, centerLat, centerLng, radiusKm, isActive, description } = req.body || {};
+      const newArea = {
+        id: 'area_' + Date.now().toString(36),
+        name: name || 'Operating Zone',
+        city: city || 'Kolkata',
+        centerLat: Number(centerLat),
+        centerLng: Number(centerLng),
+        radiusKm: Number(radiusKm) || 15,
+        isActive: isActive !== false,
+        description: description || ''
+      };
+      state.serviceAreas.push(newArea);
+      res.status(201).json({ success: true, serviceArea: newArea });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 20. Admin Withdrawals & Payouts Processing
+  app.get("/api/admin/withdrawals", requireAdminAuth, (req, res) => {
+    try {
+      const state = getEngineState();
+      res.json({ success: true, withdrawals: state.withdrawals });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/withdrawals/:id/process", requireAdminAuth, (req, res) => {
+    try {
+      const id = req.params.id;
+      const { action, notes } = req.body || {};
+      const result = processWithdrawalAuthoritative(id, action === 'reject' ? 'reject' : 'approve', notes);
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 21. Admin Vehicles Management API
+  app.get("/api/admin/vehicles", requireAdminAuth, (req, res) => {
+    try {
+      const state = getEngineState();
+      res.json({ success: true, vehicles: Object.values(state.vehicles) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/admin/vehicles/:id/status", requireAdminAuth, (req, res) => {
+    try {
+      const vehicleId = req.params.id;
+      const { status } = req.body || {};
+      const state = getEngineState();
+      const vehicle = state.vehicles[vehicleId];
+      if (!vehicle) {
+        res.status(404).json({ error: "Vehicle not found." });
+        return;
+      }
+      vehicle.verification_status = status;
+      vehicle.updated_at = new Date().toISOString();
+      res.json({ success: true, vehicle, message: `Vehicle status updated to ${status}.` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
+  // 22. Driver Approvals & Registration Management APIs
+  app.get("/api/driver-approvals", (req, res) => {
+    try {
+      const approvals = getDriverApprovalsAuthoritative();
+      res.json({ success: true, approvals });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to retrieve driver approvals." });
+    }
+  });
+
+  app.post("/api/driver-approvals", (req, res) => {
+    try {
+      const payload = req.body || {};
+      if (!payload.driverName || !payload.phone || !payload.vehicleNumber) {
+        res.status(400).json({ error: "driverName, phone, and vehicleNumber are required." });
+        return;
+      }
+      const result = createDriverApprovalAuthoritative(payload);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to submit driver registration." });
+    }
+  });
+
+  app.post("/api/driver-approvals/:id/approve", (req, res) => {
+    try {
+      const approvalId = req.params.id;
+      const { pin } = req.body || {};
+      const result = approveDriverRegistrationAuthoritative(approvalId, pin);
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to approve driver." });
+    }
+  });
+
+  app.post("/api/driver-approvals/:id/reject", (req, res) => {
+    try {
+      const approvalId = req.params.id;
+      const { reason } = req.body || {};
+      const result = rejectDriverRegistrationAuthoritative(approvalId, reason);
+      if (!result.success) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to reject driver." });
+    }
+  });
+
+  app.delete("/api/driver-approvals/:id", (req, res) => {
+    try {
+      const approvalId = req.params.id;
+      const result = deleteDriverApprovalAuthoritative(approvalId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to delete driver approval." });
+    }
+  });
+
+  // 23. Drivers List API
+  app.get("/api/drivers", (req, res) => {
+    try {
+      const drivers = getAllDriversAuthoritative();
+      res.json({ success: true, drivers });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to retrieve drivers." });
+    }
+  });
+
+  // 24. PWA Webmanifest explicit routes for standard and role-specific manifests
+  app.get(
+    [
+      "/manifest.webmanifest",
+      "/manifest.json",
+      "/manifest-customer.webmanifest",
+      "/manifest-driver.webmanifest",
+      "/manifest-admin.webmanifest"
+    ],
+    (req, res) => {
+      const filename = req.path.replace(/^\//, "");
+      const targetPath = path.join(process.cwd(), "public", filename);
+      if (fs.existsSync(targetPath)) {
+        res.setHeader("Content-Type", "application/manifest+json");
+        res.sendFile(targetPath);
+      } else {
+        res.setHeader("Content-Type", "application/manifest+json");
+        res.sendFile(path.join(process.cwd(), "public", "manifest-customer.webmanifest"));
+      }
+    }
+  );
+
   // OAuth Callback Handler for Supabase / Google OAuth (Popup communication)
   app.get(["/auth/callback", "/auth/callback/"], (req, res) => {
     res.send(`<!DOCTYPE html>
@@ -417,10 +1033,33 @@ async function startServer() {
 
   // Vite middleware for development / Static file serving for production
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { server: httpServer },
+      },
       appType: "spa",
     });
+    // Intercept @vite/client in development to safely suppress container HMR websocket errors
+    app.get("/@vite/client", async (req, res, next) => {
+      try {
+        const result = await vite.transformRequest("/@vite/client");
+        if (result && result.code) {
+          let code = result.code;
+          code = code
+            .replaceAll(/console\.error\(\s*`\[vite\][^`]*`\s*\);/g, "/* [vite] suppressed error */")
+            .replace('error: (err) => console.error("[vite]", err)', "error: (err) => {}")
+            .replace("throw e;", "return;");
+          res.setHeader("Content-Type", "application/javascript");
+          return res.send(code);
+        }
+      } catch (err) {
+        // Fall back to vite middleware
+      }
+      next();
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
@@ -436,7 +1075,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

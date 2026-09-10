@@ -3,6 +3,7 @@ import { useRide } from '../../context/RideContext';
 import { UserProfile } from '../../types';
 import { AppLogo } from '../common/AppLogo';
 import { PWAInstallButton } from '../common/PWAInstallButton';
+import { usePWAInstall, updateActiveManifestForRole } from '../../hooks/usePWAInstall';
 import { SignIn } from '../auth/SignIn';
 import { SignUp } from '../auth/SignUp';
 import { 
@@ -76,6 +77,20 @@ export const UserLogin: React.FC<UserLoginProps> = ({ onLoginSuccess, onBack }) 
   const [lockTimer, setLockTimer] = useState(0);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Detect if customer application is running as an installed PWA
+  const { isInstalled: isCustomerPWAInstalled } = usePWAInstall('user');
+
+  // Ensure active manifest is set to Customer on mount and sync installed state
+  useEffect(() => {
+    updateActiveManifestForRole('user');
+    if (isCustomerPWAInstalled) {
+      try {
+        localStorage.setItem('toto_pwa_installed_user', 'true');
+        localStorage.setItem('toto_pwa_installed', 'true');
+      } catch {}
+    }
+  }, [isCustomerPWAInstalled]);
 
   // System back button handling for login steps
   useBackHandler('login:googleModal', showGoogleModal, () => setShowGoogleModal(false), 25);
@@ -379,12 +394,18 @@ export const UserLogin: React.FC<UserLoginProps> = ({ onLoginSuccess, onBack }) 
   return (
     <div 
       id="user-login-screen" 
-      className="w-full flex-1 sm:flex-initial sm:max-w-md md:max-w-lg mx-auto bg-white sm:rounded-3xl border-0 sm:border border-[#EDE8E0] shadow-none sm:shadow-sm p-5 sm:p-8 text-[#111111] font-sans animate-in fade-in duration-200 flex flex-col justify-between min-h-[calc(100vh-65px)] sm:min-h-0 touch-pan-y"
+      className="w-full max-w-md md:max-w-lg mx-auto bg-white rounded-3xl border border-[#EDE8E0] shadow-xs sm:shadow-sm p-5 sm:p-8 text-[#111111] font-sans animate-in fade-in duration-200 flex flex-col justify-start gap-6 min-h-0 touch-pan-y"
     >
       <div className="space-y-5">
+        {/* Customer PWA Install Banner */}
+        <PWAInstallButton role="user" variant="banner" className="mb-1" />
+
         {/* Title Typography */}
         <div className="space-y-1">
-          <h1 className="text-2xl font-black text-neutral-900 tracking-tight">
+          <h1 
+            style={{ fontFamily: 'Verdana' }}
+            className="text-2xl font-black text-neutral-900 tracking-tight [font-family:Verdana]"
+          >
             {otpStep ? 'Verify Mobile Number' : "Let's get you moving."}
           </h1>
           <p className="text-xs font-medium text-neutral-500">
@@ -417,12 +438,18 @@ export const UserLogin: React.FC<UserLoginProps> = ({ onLoginSuccess, onBack }) 
               className="w-full bg-white hover:bg-neutral-50 active:scale-[0.99] text-neutral-800 font-semibold py-3 px-4 rounded-2xl border border-neutral-300 hover:border-neutral-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#E07A00]/30 flex items-center justify-between gap-3 text-xs shadow-xs transition-all cursor-pointer disabled:opacity-60 group"
             >
               {googleLoading ? (
-                <div className="w-full flex items-center justify-center gap-2.5 py-0.5">
+                <div 
+                  style={{ textAlign: 'center', fontWeight: 'bold', textDecorationLine: 'none' }}
+                  className="w-full flex items-center justify-center gap-2.5 py-0.5 text-center font-bold no-underline"
+                >
                   <RotateCw className="w-4 h-4 animate-spin text-[#E07A00]" />
                   <span className="font-semibold text-neutral-800 text-xs">Connecting to Google Cloud Console...</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-3 min-w-0 text-left">
+                <div 
+                  style={{ textAlign: 'center', fontWeight: 'bold', textDecorationLine: 'none' }}
+                  className="flex items-center gap-3 min-w-0 text-center font-bold no-underline"
+                >
                   <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center shrink-0">
                     <svg className="w-5 h-5" viewBox="0 0 24 24">
                       <path
@@ -463,7 +490,10 @@ export const UserLogin: React.FC<UserLoginProps> = ({ onLoginSuccess, onBack }) 
             {/* Firebase Phone Authentication Form */}
             <form onSubmit={handleSendCode} className="space-y-3.5">
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-neutral-800">
+                <label 
+                  style={{ fontSize: '13px' }}
+                  className="block font-bold text-neutral-800 text-[13px]"
+                >
                   Mobile Number (India)
                 </label>
                 <div className="relative flex items-center bg-neutral-50 rounded-2xl border border-neutral-200 focus-within:border-[#E07A00] focus-within:bg-white transition-colors px-3 py-2.5">
@@ -486,7 +516,10 @@ export const UserLogin: React.FC<UserLoginProps> = ({ onLoginSuccess, onBack }) 
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-neutral-800">
+                <label 
+                  style={{ fontSize: '13px' }}
+                  className="block font-bold text-neutral-800 text-[13px]"
+                >
                   Full Name (Optional)
                 </label>
                 <input
@@ -494,7 +527,8 @@ export const UserLogin: React.FC<UserLoginProps> = ({ onLoginSuccess, onBack }) 
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="e.g. Rahul Sharma"
-                  className="w-full bg-neutral-50 rounded-2xl border border-neutral-200 focus-within:border-[#E07A00] focus-within:bg-white px-3.5 py-2.5 text-xs font-medium text-neutral-900 placeholder-neutral-400 focus:outline-none transition-colors"
+                  style={{ fontSize: '16px', lineHeight: '24px' }}
+                  className="w-full bg-neutral-50 rounded-2xl border border-neutral-200 focus-within:border-[#E07A00] focus-within:bg-white px-3.5 py-2.5 font-medium text-neutral-900 placeholder-neutral-400 focus:outline-none transition-colors text-[16px] leading-[24px]"
                 />
               </div>
 

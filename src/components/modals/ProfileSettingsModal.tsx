@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   Sparkles,
   Settings,
-  Zap,
   User as UserIcon
 } from 'lucide-react';
 import { UserProfile } from '../../types';
@@ -54,7 +53,7 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const { setActiveRole, triggerSound } = useRide();
+  const { triggerSound } = useRide();
 
   const handleAction = (callback: () => void) => {
     onClose();
@@ -71,21 +70,6 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
   };
 
   const menuItems = [
-    {
-      id: 'captain_portal',
-      title: 'Drive with Toto (Captain Partner)',
-      subtitle: 'Switch to Toto driver mode & accept rides',
-      badge: 'Partner',
-      badgeColor: 'bg-amber-100 text-amber-800 border-amber-300',
-      icon: Zap,
-      iconColor: 'text-[#E07A00]',
-      iconBg: 'bg-amber-50',
-      action: () => {
-        onClose();
-        triggerSound('beep');
-        setActiveRole('driver');
-      }
-    },
     {
       id: 'wallet',
       title: 'Toto Drive Wallet',

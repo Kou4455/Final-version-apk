@@ -541,7 +541,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       {/* Speedometer and route info if active */}
       {(currentSpeed > 0 || liveRoadCoords.length > 0) && (
         <div 
-          className={`absolute ${edgeToEdgeTop ? 'top-[calc(134px+env(safe-area-inset-top,0px))]' : 'top-3'} left-3 z-10 flex flex-wrap items-center gap-2 max-w-[85%]`}
+          className={`absolute ${edgeToEdgeTop ? 'top-[calc(68px+env(safe-area-inset-top,0px))]' : 'top-3'} left-3 z-10 flex flex-wrap items-center gap-2 max-w-[85%]`}
         >
           {/* Speedometer Badge */}
           {currentSpeed > 0 && (
@@ -563,7 +563,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       {/* Tap hint notification */}
       {tapHint && (
-        <div className={`absolute ${edgeToEdgeTop ? 'top-44' : 'top-36'} left-1/2 -translate-x-1/2 z-30 px-3 py-1 bg-[#181818] text-white text-xs font-bold rounded-full shadow-lg border border-white/20 animate-bounce pointer-events-none`}>
+        <div className={`absolute ${edgeToEdgeTop ? 'top-28' : 'top-20'} left-1/2 -translate-x-1/2 z-30 px-3 py-1 bg-[#181818] text-white text-xs font-bold rounded-full shadow-lg border border-white/20 animate-bounce pointer-events-none`}>
           {tapHint}
         </div>
       )}

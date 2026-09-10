@@ -4,12 +4,16 @@ interface AppLogoProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   showText?: boolean;
   className?: string;
+  iconClassName?: string;
+  iconStyle?: React.CSSProperties;
 }
 
 export const AppLogo: React.FC<AppLogoProps> = ({ 
   size = 'md', 
   showText = false,
-  className = ''
+  className = '',
+  iconClassName = '',
+  iconStyle,
 }) => {
   const sizeMap = {
     xs: { icon: 'w-6 h-6', text: 'text-xs', sub: 'text-[9px]' },
@@ -25,9 +29,10 @@ export const AppLogo: React.FC<AppLogoProps> = ({
     <div className={`flex items-center gap-2.5 select-none ${className}`}>
       {/* Brand Icon: Yellow rounded squircle with black-ink electric Toto & lightning bolt */}
       <div 
-        className={`${currentSize.icon} relative rounded-[28%] bg-[#FFD500] shadow-sm flex items-center justify-center overflow-hidden border border-black/10 shrink-0 transition-transform hover:scale-105`}
+        className={`${currentSize.icon} relative rounded-[28%] bg-[#FFD500] shadow-sm flex items-center justify-center overflow-hidden border border-black/10 shrink-0 transition-transform hover:scale-105 ${iconClassName}`}
         style={{
-          boxShadow: '0 3px 8px -2px rgba(234, 179, 8, 0.4), 0 1px 3px rgba(0, 0, 0, 0.1)'
+          boxShadow: '0 3px 8px -2px rgba(234, 179, 8, 0.4), 0 1px 3px rgba(0, 0, 0, 0.1)',
+          ...iconStyle,
         }}
       >
         <svg 
